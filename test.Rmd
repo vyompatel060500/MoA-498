@@ -6,12 +6,22 @@ output: pdf_document
 ---
 
 ```{r}
-# install.packages("speedglm")
-library(tidyverse) # metapackage of all tidyverse packages
+library(glue)
+library(tidyverse) 
 library(MASS)
 library(boot)
 library(speedglm)
 library(readr)
+
+logloss<-function(predicted, actual)
+{   #function to compute the Log-Loss
+  
+    # :param : actual- Ground truth (correct) 0-1 labels vector
+    # :param : predicted- predicted values from the model
+    # return: result- log-loss value
+result<- -1/length(actual)*(sum((actual*log(predicted)+(1-actual)*log(1-predicted))))
+return(result)
+}
 
 fix_names <- function(df) {
     names(df) <- gsub('-', '_', names(df))
@@ -34,16 +44,32 @@ test_y<-train_scores[-train,]%>% dplyr::select(-sig_id)
 t<-test_y %>% dplyr::select(nfkb_inhibitor) 
 ```
 
+
 ```{r}
-glm_fit<-lda(train_y$nfkb_inhibitor~ .,data = data.frame(train_x))
-summary(glm_fit)
+predictors = names(train_y)
+models = list()
+loglosses = list()
 ```
 
 ```{r}
-pred <- predict(glm_fit,newdata=test_x)$class %>% as.numeric() - 1
+for (predictor in predictors){
 
-t<- t %>%unlist()
-#pred[abs(pred) <= .Machine$double.eps * 2] <- 0
-x<-t*log(pred) + (1-t)*log(1-pred)
-mean(as.matrix(x))
+  train_y_predictor<-train_y %>% dplyr::select(predictor) %>% unlist(use.names = FALSE)
+  test_y_predictor<-test_y %>%dplyr::select(predictor) %>% unlist(use.names = FALSE)
+  
+  
+  models[[predictor]]<-speedglm(train_y_predictor~.,data = data.frame(train_x),family = binomial(),maxit = 200)
+  pred = predict(models[[predictor]],newdata = test_x,type="response")
+  
+  loss<-logloss(pred,test_y_predictor)
+  loglosses[predictor] = loss
+  
+  print(glue("The logloss for {predictor} on test data was {loss}"))
+}
+```
+
+```{r}
+total = 0
+for (loss in loglosses){total = total+loss}
+print(glue("The mean(final) logloss of the model is: {total/length(loglosses)}."))
 ```
