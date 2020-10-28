@@ -61,7 +61,7 @@ foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","speedglm")) %dopar%
   loss<-logloss(pred,test_y_predictor)
   loglosses[predictors[i]] = loss
   
-  print(glue("The logloss for {predictor} on test data was {loss}"))
+  print(glue("The logloss for {predictors[i]} on test data was {loss}"))
 }
 
 total = 0
