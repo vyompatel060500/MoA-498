@@ -1,11 +1,3 @@
----
-title: "Untitled"
-author: "Vyom Patel"
-date: "23/10/2020"
-output: pdf_document
----
-
-```{r}
 library(glue)
 library(tidyverse) 
 library(MASS)
@@ -13,19 +5,25 @@ library(boot)
 library(speedglm)
 library(readr)
 
+library(foreach)
+library(doParallel)
+cl<-makeCluster(20)     # modify this to number of parallel processes required
+registerDoParallel(cl)
+
+
 logloss<-function(predicted, actual)
 {   #function to compute the Log-Loss
   
-    # :param : actual- Ground truth (correct) 0-1 labels vector
-    # :param : predicted- predicted values from the model
-    # return: result- log-loss value
-result<- -1/length(actual)*(sum((actual*log(predicted)+(1-actual)*log(1-predicted))))
-return(result)
+  # :param : actual- Ground truth (correct) 0-1 labels vector
+  # :param : predicted- predicted values from the model
+  # return: result- log-loss value
+  result<- -1/length(actual)*(sum((actual*log(predicted)+(1-actual)*log(1-predicted))))
+  return(result)
 }
 
 fix_names <- function(df) {
-    names(df) <- gsub('-', '_', names(df))
-    df
+  names(df) <- gsub('-', '_', names(df))
+  df
 }
 
 
@@ -42,46 +40,44 @@ test_x<-train_features[-train,] %>% dplyr::select(-sig_id, -cp_type, -cp_time, -
 train_y<-train_scores[train,]%>% dplyr::select(-sig_id)
 test_y<-train_scores[-train,]%>% dplyr::select(-sig_id)
 t<-test_y %>% dplyr::select(nfkb_inhibitor) 
-```
+ 
 
 
-```{r}
 predictors = names(train_y)
 models = list()
 loglosses = list()
-```
 
-```{r}
-for (predictor in predictors){
 
-  train_y_predictor<-train_y %>% dplyr::select(predictor) %>% unlist(use.names = FALSE)
-  test_y_predictor<-test_y %>%dplyr::select(predictor) %>% unlist(use.names = FALSE)
+
+foreach(i=1:length(predictors)  ,.packages=c("dplyr","speedglm")) %dopar% {
+  
+  train_y_predictor<-train_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
+  test_y_predictor<-test_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
   
   
-  models[[predictor]]<-speedglm(train_y_predictor~.,data = data.frame(train_x),family = binomial(),maxit = 200)
-  pred = predict(models[[predictor]],newdata = test_x,type="response")
+  models[[predictors[i]]]<-speedglm(train_y_predictor~.,data = data.frame(train_x),family = binomial(),maxit = 200)
+  pred = predict(models[[predictors[i]]],newdata = test_x,type="response")
   
   loss<-logloss(pred,test_y_predictor)
-  loglosses[predictor] = loss
+  loglosses[predictors[i]] = loss
   
   print(glue("The logloss for {predictor} on test data was {loss}"))
 }
-```
 
-```{r}
 total = 0
 for (loss in loglosses){total = total+loss}
 print(glue("The mean(final) logloss of the model is: {total/length(loglosses)}."))
-```
+ 
 
-```{r}
 submission=list()
 for(i in (predictors)){
   submission[[i]] = predict(models[[i]] , newdata = test_features,type="response")
 }
 
-```
-
-```{r}
 write_csv(data.frame(submission), 'submission1.csv')
-```
+ 
+
+
+ 
+
+
