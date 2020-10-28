@@ -49,7 +49,7 @@ loglosses = list()
 
 
 
-foreach(i=1:length(predictors)  ,.packages=c("dplyr","speedglm")) %dopar% {
+foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","speedglm")) %dopar% {
   
   train_y_predictor<-train_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
   test_y_predictor<-test_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
