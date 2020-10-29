@@ -36,8 +36,7 @@ test_x<-train_features[-train,] %>% dplyr::select(-sig_id, -cp_type, -cp_time, -
 
 train_y<-train_scores[train,]%>% dplyr::select(-sig_id)
 test_y<-train_scores[-train,]%>% dplyr::select(-sig_id)
-t<-test_y %>% dplyr::select(nfkb_inhibitor) 
- 
+
 
 predictors = names(train_y)
 models = list()
@@ -57,12 +56,13 @@ models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","speedglm"))
 end_time<-Sys.time()
 diff=difftime(end_time,start_time,units="secs")
 print(glue("Time taken for training models: {diff} seconds."))
+stopCluster(cl)
 
 print(glue("Started prediction on trained models..."))
 # This foreach loop predicts the probabilities using trained models foe each output
 # variable and returns a list of predictions. To access 'ith model's prediction,
 # use preds[[i]]
-preds<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","speedglm")) %dopar% {
+preds<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","speedglm")) %do% {
   predict(models[[i]],newdata = test_x,type="response")
 }
 
@@ -70,7 +70,7 @@ print(glue("Computing loglosses of predicted outcomes..."))
 # This foreach loop computes the logloss value for each output variable using
 # the predictions generated from each model. To access i'th variable's logloss
 # use loglosses[[i]]
-loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","speedglm")) %dopar% {
+loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","speedglm")) %do% {
   test_y_predictor<-test_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
   logloss(preds[[i]],test_y_predictor)
 }
