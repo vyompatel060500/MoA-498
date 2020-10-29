@@ -8,14 +8,29 @@ library(foreach)
 library(doParallel)
 
 
-logloss<-function(predicted, actual)
-{   #function to compute the Log-Loss
-  
+logloss<-function(predicted, actual){
+  # function to compute the Log-Loss
   # :param : actual- Ground truth (correct) 0-1 labels vector
   # :param : predicted- predicted values from the model
   # return: result- log-loss value
   result<- -1/length(actual)*(sum((actual*log(predicted)+(1-actual)*log(1-predicted))))
   return(result)
+}
+
+important_features<-function(features, threshold){
+  # returns all predictors with correlation less than threshold
+  corr_matrix<-cor(features)
+  columns<-rep(TRUE,nrow(corr_matrix))
+  
+  for(i in 1:length(columns) - 1){
+    for(j in (i+1):length(columns)){
+      if( length(corr_matrix[i,j]) > 0 && abs(corr_matrix[i,j])>= threshold){
+        columns[j]<-FALSE
+      }
+    } 
+  }
+  
+  return (colnames(features)[columns])
 }
 
 fix_names <- function(df) {
@@ -38,7 +53,12 @@ train_y<-train_scores[train,]%>% dplyr::select(-sig_id)
 test_y<-train_scores[-train,]%>% dplyr::select(-sig_id)
 
 
-predictors = names(train_y)
+#features<-important_features(train_x,0.80)
+#train_x<-train_x %>% dplyr::select(features)
+#test_x<-test_x %>% dplyr::select(features)
+
+
+predictors = names(train_y)[1]
 models = list()
 loglosses = list()
 
@@ -82,10 +102,4 @@ submission=list()
 for(i in 1:length(predictors)){
   submission[[i]] = predict(models[[i]] , newdata = test_features,type="response")
 }
-write_csv(data.frame(submission), 'submission1.csv')
- 
-
-
- 
-
-
+write_csv(data.frame(submission), 'submission.csv')

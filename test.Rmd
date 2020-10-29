@@ -29,6 +29,22 @@ logloss<-function(predicted, actual)
   return(result)
 }
 
+important_features<-function(features, threshold){
+  # returns all predictors with correlation less than threshold
+  corr_matrix<-cor(features)
+  columns<-rep(TRUE,nrow(corr_matrix))
+  
+  for(i in 1:length(columns) - 1){
+    for(j in (i+1):length(columns)){
+      if( length(corr_matrix[i,j]) > 0 && abs(corr_matrix[i,j])>= threshold){
+        columns[j]<-FALSE
+      }
+    } 
+  }
+  
+  return (colnames(features)[columns])
+}
+
 fix_names <- function(df) {
   names(df) <- gsub('-', '_', names(df))
   df
@@ -48,10 +64,16 @@ train = 1:20000
 train_x<-train_features[train,] %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
 test_x<-train_features[-train,] %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
 
+
+# Uncomment these to try feature selection using simple correlation
+# features<-important_features(train_x,0.80)#
+#train_x<-train_x %>% dplyr::select(features)
+#test_x<-test_x %>% dplyr::select(features)
+
 train_y<-train_scores[train,]%>% dplyr::select(-sig_id)
 test_y<-train_scores[-train,]%>% dplyr::select(-sig_id)
 
-predictors = names(train_y)
+predictors = names(train_y)[1]
 ```
 
 $//$ Train models: $//$
@@ -97,6 +119,10 @@ loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","speedglm
 }
 
 print(glue("The mean(final) logloss of the model is: {mean(unlist(loglosses))}."))
+```
+$//$ Try Feature Selection here: $//$
+```{r}
+
 ```
 
 $//$ Create final submission file: $//$
