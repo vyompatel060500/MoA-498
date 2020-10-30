@@ -100,6 +100,6 @@ print(glue("The mean(final) logloss of the model is: {mean(unlist(loglosses))}."
 
 submission=list()
 for(i in 1:length(predictors)){
-  submission[[i]] = predict(models[[i]] , newdata = test_features,type="response")
+  submission[[predictors[i]]] = predict(models[[i]] , newdata = test_features, type="response")
 }
-write_csv(data.frame(submission), 'submission.csv')
+write_csv(data.frame(sig_id,submission), 'submission.csv')

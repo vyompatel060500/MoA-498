@@ -64,7 +64,8 @@ train = 1:20000
 train_x<-train_features[train,] %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
 test_x<-train_features[-train,] %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
 
-
+sig_id<-test_features %>% dplyr::select(sig_id)
+test_features<-test_features %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
 # Uncomment these to try feature selection using simple correlation
 # features<-important_features(train_x,0.80)#
 #train_x<-train_x %>% dplyr::select(features)
@@ -129,7 +130,7 @@ $//$ Create final submission file: $//$
 ```{r}
 submission=list()
 for(i in 1:length(predictors)){
-  submission[[i]] = predict(models[[i]] , newdata = test_features,type="response")
+  submission[[predictors[i]]] = predict(models[[i]] , newdata = test_features, type="response")
 }
-write_csv(data.frame(submission), 'submission.csv')
+write_csv(data.frame(sig_id,submission), 'submission.csv')
 ```
