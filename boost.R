@@ -53,10 +53,11 @@ train_features <- read_csv("./project498/MoA-498/lish-moa/train_features.csv") %
 train_scores <- read_csv("./project498/MoA-498/lish-moa/train_targets_scored.csv") %>% fix_names
 test_features <- read_csv("./project498/MoA-498/lish-moa/test_features.csv")%>% fix_names
 
-train = 1:20000
+train = 1:10000
+test = 20001:dim(train_features)[1]
 
 train_x<-train_features[train,] %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
-test_x<-train_features[-train,] %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
+test_x<-train_features[test,] %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
 
 sig_id<-test_features %>% dplyr::select(sig_id)
 test_features<-test_features %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
@@ -70,7 +71,7 @@ train_x_pca<-predict(pca_cg,train_x_cg)
 test_x_pca<-predict(pca_cg, test_x_cg)
 
 train_y<-train_scores[train,]%>% dplyr::select(-sig_id)
-test_y<-train_scores[-train,]%>% dplyr::select(-sig_id)
+test_y<-train_scores[test,]%>% dplyr::select(-sig_id)
 
 predictors = names(train_y)[1]
 
