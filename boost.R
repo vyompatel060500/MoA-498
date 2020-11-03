@@ -66,9 +66,11 @@ test_features<-test_features %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_
 train_x_cg<-train_x%>%dplyr::select(starts_with('c') | starts_with('g'))
 test_x_cg<-test_x%>%dplyr::select(starts_with('c') | starts_with('g'))
 
+print(glue("Starting PCA..."))
 pca_cg <- preProcess(train_x_cg, method = "pca", thresh = 0.8)
 train_x_pca<-predict(pca_cg,train_x_cg)
 test_x_pca<-predict(pca_cg, test_x_cg)
+print(glue("Completed PCA!"))
 
 train_y<-train_scores[train,]%>% dplyr::select(-sig_id)
 test_y<-train_scores[test,]%>% dplyr::select(-sig_id)
@@ -88,9 +90,13 @@ stopCluster(cl)
 
 end_time<-Sys.time()
 diff=difftime(end_time,start_time,units="secs")
+print(glue("Training Complete!"))
 print(glue("Time taken for training models: {diff} seconds."))
 
+print(glue("Starting predctions..."))
 preds<-predict(model,newdata = test_x_pca)%>%unlist()
+print(glue("Prediction complete"))
+
 #preds <- pmax(pmin(as.numeric(preds), 1 - 1e-15), 1e-15)
 logloss(preds,test_y$nfkb_inhibitor)
 
