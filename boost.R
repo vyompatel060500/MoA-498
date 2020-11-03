@@ -8,6 +8,7 @@ library(doParallel)
 library(foreach)
 library(caret)
 library(e1071)
+library(xgboost)
 #$//$ Define functions here: $//$
 
 logloss<-function(predicted, actual)
@@ -51,8 +52,6 @@ fix_names <- function(df) {
 train_features <- read_csv("./project498/MoA-498/lish-moa/train_features.csv") %>% fix_names
 train_scores <- read_csv("./project498/MoA-498/lish-moa/train_targets_scored.csv") %>% fix_names
 test_features <- read_csv("./project498/MoA-498/lish-moa/test_features.csv")%>% fix_names
-sample <- read_csv("./project498/MoA-498/lish-moa/sample_submission.csv") %>% fix_names
-
 
 train = 1:20000
 
@@ -82,7 +81,7 @@ cl<-makeCluster(10)
 registerDoParallel(cl)
 cv_10 <- trainControl(method = "cv", number = 10)
 train_y_predictor<-train_y %>% dplyr::select(nfkb_inhibitor) %>% unlist(use.names = FALSE)
-model<-train(as.factor(train_y_predictor)~., data = train_x_pca, method = "adaboost", trControl = cv_10 )
+model<-train(as.factor(train_y_predictor)~., data = train_x_pca, method = "xgbTree", trControl = cv_10 )
 get_best_result(model)
 stopCluster(cl)
 
