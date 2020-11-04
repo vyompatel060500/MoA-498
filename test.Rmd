@@ -74,12 +74,26 @@ test_features<-test_features %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_
 train_y<-train_scores[train,]%>% dplyr::select(-sig_id)
 test_y<-train_scores[-train,]%>% dplyr::select(-sig_id)
 
-predictors = names(train_y)[1]
+predictors = names(train_y)
+```
+PCA
+```{r}
+
+train_x_cg<-train_x%>%dplyr::select(starts_with('c') | starts_with('g'))
+test_x_cg<-test_x%>%dplyr::select(starts_with('c') | starts_with('g'))
+test_features<-test_features%>%dplyr::select(starts_with('c') | starts_with('g'))
+
+print(glue("Starting PCA..."))
+pca_cg <- preProcess(train_x_cg, method = "pca", thresh = 0.8)
+train_x_pca<-predict(pca_cg,train_x_cg)
+test_x_pca<-predict(pca_cg, test_x_cg)
+test_features<-predict(pca_cg, test_features)
+print(glue("Completed PCA!"))
 ```
 
 $//$ Train models: $//$
 ```{r}
-cl<-makeCluster(4)     # modify this to number of parallel processes required
+cl<-makeCluster(10)     # modify this to number of parallel processes required
 registerDoParallel(cl)
 
 start_time<-Sys.time()
@@ -89,12 +103,12 @@ print(glue("Started training models..."))
 # models. To access i'th model, use models[[i]].
 models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","speedglm")) %dopar% {
   train_y_predictor<-train_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
-  speedglm(train_y_predictor~ . ,data = data.frame(train_x), family=binomial(), maxit = 250)
+  speedglm(train_y_predictor~ . ,data = data.frame(train_x_pca), family=binomial(), maxit = 250)
 }
+stopCluster(cl)
 end_time<-Sys.time()
 diff=difftime(end_time,start_time,units="secs")
 print(glue("Time taken for training models: {diff} seconds."))
-stopCluster(cl)
 ```
 
 $//$ Predict using trained models: $//$
@@ -104,7 +118,7 @@ print(glue("Started prediction on trained models..."))
 # variable and returns a list of predictions. To access 'ith model's prediction,
 # use preds[[i]]
 preds<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","speedglm")) %do% {
-  predict(models[[i]],newdata = test_x,type="response")
+  predict(models[[i]],newdata = test_x_pca,type="response")
 }
 ```
 
@@ -120,10 +134,6 @@ loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","speedglm
 }
 
 print(glue("The mean(final) logloss of the model is: {mean(unlist(loglosses))}."))
-```
-$//$ Try Feature Selection here: $//$
-```{r}
-
 ```
 
 $//$ Create final submission file: $//$
