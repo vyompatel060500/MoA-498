@@ -84,11 +84,14 @@ for(i in 1:length(train_x_pca)){
   pvalues[[i]]<-coef(summary(models[[i]]))[2,4]
 }
 
+start_time<-Sys.time()
+print(glue("Started training models..."))
+
 cl<-makeCluster(10)
 registerDoParallel(cl)
 cv_10 <- trainControl(method = "cv", number = 10)
 train_y_predictor<-train_y %>% dplyr::select(nfkb_inhibitor) %>% unlist(use.names = FALSE)
-model<-train(as.factor(train_y_predictor)~., data = train_x_pca[,which(pvalues<0.01)], method = "xgbTree", trControl = cv_10 )
+model<-train(as.factor(train_y_predictor)~., data = train_x_pca[,which(pvalues<0.001)], method = "xgbTree", trControl = cv_10 )
 get_best_result(model)
 stopCluster(cl)
 
