@@ -49,14 +49,16 @@ fix_names <- function(df) {
   df
 }
 
-path_why <- "./project498/MoA-498/"
+# path_why <- "./project498/MoA-498/"
+path_why <- ""
 
 train_features <- read_csv(glue("{path_why}lish-moa/train_features.csv")) %>% fix_names
 train_scores <- read_csv(glue("{path_why}lish-moa/train_targets_scored.csv")) %>% fix_names
 test_features <- read_csv(glue("{path_why}lish-moa/test_features.csv")) %>% fix_names
 
-train = 1:10000
-test = 20001:dim(train_features)[1]
+set.seed(42)
+test = sample(1:nrow(train_features), nrow(train_features)/10)
+train = -test
 
 train_x<-train_features[train,] %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
 test_x<-train_features[test,] %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
@@ -69,10 +71,13 @@ train_x_cg<-train_x%>%dplyr::select(starts_with('c') | starts_with('g'))
 test_x_cg<-test_x%>%dplyr::select(starts_with('c') | starts_with('g'))
 
 print(glue("Starting PCA..."))
-pca_cg <- preProcess(train_x_cg, method = "pca", thresh = 0.8)
+pca_cg <- preProcess(train_x_cg, method = "pca", thresh = 0.8, pcaComp = 10)
 train_x_pca<-predict(pca_cg,train_x_cg)
 test_x_pca<-predict(pca_cg, test_x_cg)
 print(glue("Completed PCA!"))
+
+
+################################## Ran to here.
 
 train_y<-train_scores[train,]%>% dplyr::select(-sig_id)
 test_y<-train_scores[test,]%>% dplyr::select(-sig_id)
