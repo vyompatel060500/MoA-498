@@ -1,3 +1,5 @@
+#!/bin/Rscript
+
 library(glue)
 library(tidyverse) 
 library(MASS)
@@ -47,11 +49,11 @@ fix_names <- function(df) {
   df
 }
 
+path_why <- "./project498/MoA-498/"
 
-
-train_features <- read_csv("./project498/MoA-498/lish-moa/train_features.csv") %>% fix_names
-train_scores <- read_csv("./project498/MoA-498/lish-moa/train_targets_scored.csv") %>% fix_names
-test_features <- read_csv("./project498/MoA-498/lish-moa/test_features.csv")%>% fix_names
+train_features <- read_csv(glue("{path_why}lish-moa/train_features.csv")) %>% fix_names
+train_scores <- read_csv(glue("{path_why}lish-moa/train_targets_scored.csv")) %>% fix_names
+test_features <- read_csv(glue("{path_why}lish-moa/test_features.csv")) %>% fix_names
 
 train = 1:10000
 test = 20001:dim(train_features)[1]
