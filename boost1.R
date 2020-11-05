@@ -50,7 +50,7 @@ fix_names <- function(df) {
 }
 
 # path_why <- "./project498/MoA-498/"
-path_why <- ""
+path_why <- "~/project498/MoA-498/"
 
 train_features <- read_csv(glue("{path_why}lish-moa/train_features.csv")) %>% fix_names
 train_scores <- read_csv(glue("{path_why}lish-moa/train_targets_scored.csv")) %>% fix_names
@@ -82,12 +82,12 @@ print(glue("Completed PCA!"))
 train_y<-train_scores[train,]%>% dplyr::select(-sig_id)
 test_y<-train_scores[test,]%>% dplyr::select(-sig_id)
 
-train_y_predictor<-train_y %>% dplyr::select(nfkb_inhibitor) %>% unlist(use.names = FALSE)
+train_y_predictor<-train_y %>% dplyr::select(nfkb_inhibitor)
 models = list()
 pvalues = list()
 
 for(i in 1:length(train_x_pca)){
-  models[[i]]<-glm(train_y_predictor~., data = train_x_pca[i])
+  models[[i]]<-glm(nfkb_inhibitor~., data = data.frame(train_y_predictor,train_x_pca[i]))
   pvalues[[i]]<-coef(summary(models[[i]]))[2,4]
 }
 
@@ -96,22 +96,22 @@ print(glue("Started training models..."))
 
 cl<-makeCluster(10)
 registerDoParallel(cl)
-cv_10 <- trainControl(method = "cv", number = 10)
-train_y_predictor<-train_y %>% dplyr::select(nfkb_inhibitor) %>% unlist(use.names = FALSE)
-model<-train(as.factor(train_y_predictor)~., data = train_x_pca[,which(pvalues<0.001)], method = "xgbTree", trControl = cv_10 )
+#cv_10 <- trainControl(method = "cv", number = 3)
+ctrl2 <- trainControl(method = "repeatedcv", repeats = 5,verboseIter = TRUE)
+train_y_predictor<-train_y %>% dplyr::select(nfkb_inhibitor)
+model<-train(nfkb_inhibitor~., data = data.frame(train_y_predictor, train_x_pca[,which(pvalues<0.01)]), method = "glm" , trControl = ctrl2)
 get_best_result(model)
 stopCluster(cl)
-
 
 end_time<-Sys.time()
 diff=difftime(end_time,start_time,units="secs")
 print(glue("Training Complete!"))
 print(glue("Time taken for training models: {diff} seconds."))
 
-print(glue("Starting predctions..."))
-preds<-predict(model,newdata = test_x_pca)%>%unlist()
+print(glue("Starting predictions..."))
+preds<-predict(model,test_x_pca[,which(pvalues<0.01)])
 print(glue("Prediction complete"))
 
-#preds <- pmax(pmin(as.numeric(preds), 1 - 1e-15), 1e-15)
+preds <- pmax(pmin(as.numeric(preds), 1 - 1e-15), 1e-15)
 logloss(preds,test_y$nfkb_inhibitor)
 
