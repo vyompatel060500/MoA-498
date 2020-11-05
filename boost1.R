@@ -69,11 +69,13 @@ test_features<-test_features %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_
 
 train_x_cg<-train_x%>%dplyr::select(starts_with('c') | starts_with('g'))
 test_x_cg<-test_x%>%dplyr::select(starts_with('c') | starts_with('g'))
+test_features_cg<-test_features%>%dplyr::select(starts_with('c') | starts_with('g'))
 
 print(glue("Starting PCA..."))
-pca_cg <- preProcess(train_x_cg, method = "pca", thresh = 0.8, pcaComp = 10)
+pca_cg <- preProcess(train_x_cg, method = "pca", thresh = 0.8)
 train_x_pca<-predict(pca_cg,train_x_cg)
 test_x_pca<-predict(pca_cg, test_x_cg)
+test_features<-predict(pca_cg,test_features_cg)
 print(glue("Completed PCA!"))
 
 
@@ -81,37 +83,46 @@ print(glue("Completed PCA!"))
 
 train_y<-train_scores[train,]%>% dplyr::select(-sig_id)
 test_y<-train_scores[test,]%>% dplyr::select(-sig_id)
+predictors = names(train_y)
 
-train_y_predictor<-train_y %>% dplyr::select(nfkb_inhibitor)
-models = list()
-pvalues = list()
+#for(i in 1:length(train_x_pca)){
+#  models[[i]]<-glm(nfkb_inhibitor~., data = data.frame(train_y_predictor,train_x_pca[i]))
+#  pvalues[[i]]<-coef(summary(models[[i]]))[2,4]
+#}
 
-for(i in 1:length(train_x_pca)){
-  models[[i]]<-glm(nfkb_inhibitor~., data = data.frame(train_y_predictor,train_x_pca[i]))
-  pvalues[[i]]<-coef(summary(models[[i]]))[2,4]
-}
-
-start_time<-Sys.time()
-print(glue("Started training models..."))
 
 cl<-makeCluster(10)
 registerDoParallel(cl)
-#cv_10 <- trainControl(method = "cv", number = 3)
-ctrl2 <- trainControl(method = "repeatedcv", repeats = 5,verboseIter = TRUE)
-train_y_predictor<-train_y %>% dplyr::select(nfkb_inhibitor)
-model<-train(nfkb_inhibitor~., data = data.frame(train_y_predictor, train_x_pca[,which(pvalues<0.01)]), method = "glm" , trControl = ctrl2)
-get_best_result(model)
-stopCluster(cl)
+start_time<-Sys.time()
+print(glue("Started training models..."))
 
+models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
+  train_y_predictor<-train_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
+  datamatrix<-xgb.DMatrix(data = as.matrix(train_x_pca), label = train_y_predictor)
+  xgboost(data = datamatrix, max.depth = 5, eta = 1, nthread = 10, nrounds = 5, objective = "binary:logistic", verbose = 0, eval.metric = "logloss")
+}
 end_time<-Sys.time()
 diff=difftime(end_time,start_time,units="secs")
 print(glue("Training Complete!"))
 print(glue("Time taken for training models: {diff} seconds."))
+stopCluster(cl)
 
 print(glue("Starting predictions..."))
-preds<-predict(model,test_x_pca[,which(pvalues<0.01)])
+preds<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
+  predict(models[[i]],newdata = as.matrix(test_x_pca))
+}
 print(glue("Prediction complete"))
 
-preds <- pmax(pmin(as.numeric(preds), 1 - 1e-15), 1e-15)
-logloss(preds,test_y$nfkb_inhibitor)
+loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
+  test_y_predictor<-test_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
+  
+  temp <- pmax(pmin(as.numeric(preds[[i]]), 1 - 1e-15), 1e-15)
+  logloss(temp,test_y_predictor)
+}
+
+submission=list()
+for(i in 1:length(predictors)){
+  submission[[predictors[i]]] = predict(models[[i]] , newdata = as.matrix(test_features))
+}
+write_csv(data.frame(sig_id,submission), 'submission.csv')
 
