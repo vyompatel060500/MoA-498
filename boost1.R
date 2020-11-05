@@ -13,6 +13,7 @@ library(e1071)
 library(xgboost)
 #$//$ Define functions here: $//$
 
+
 logloss<-function(predicted, actual)
 {   #function to compute the Log-Loss
   
@@ -50,12 +51,12 @@ fix_names <- function(df) {
 }
 
 # path_why <- "./project498/MoA-498/"
-path_why <- "~/project498/MoA-498/"
+path_why <- "/home/patel/project498/MoA-498/"
 
-train_features <- read_csv(glue("{path_why}lish-moa/train_features.csv")) %>% fix_names
-train_scores <- read_csv(glue("{path_why}lish-moa/train_targets_scored.csv")) %>% fix_names
-test_features <- read_csv(glue("{path_why}lish-moa/test_features.csv")) %>% fix_names
-
+train_features <- read_csv(glue("{path_why}lish-moa/train_features.csv")) 
+train_scores <- read_csv(glue("{path_why}lish-moa/train_targets_scored.csv"))
+test_features <- read_csv(glue("{path_why}lish-moa/test_features.csv"))
+sample_submission<-read_csv(glue("{path_why}lish-moa/sample_submission.csv"))
 set.seed(42)
 test = sample(1:nrow(train_features), nrow(train_features)/10)
 train = -test
@@ -75,23 +76,14 @@ print(glue("Starting PCA..."))
 pca_cg <- preProcess(train_x_cg, method = "pca", thresh = 0.8)
 train_x_pca<-predict(pca_cg,train_x_cg)
 test_x_pca<-predict(pca_cg, test_x_cg)
-test_features<-predict(pca_cg,test_features_cg)
+test_features_pca<-predict(pca_cg,test_features_cg)
 print(glue("Completed PCA!"))
-
-
-################################## Ran to here.
 
 train_y<-train_scores[train,]%>% dplyr::select(-sig_id)
 test_y<-train_scores[test,]%>% dplyr::select(-sig_id)
 predictors = names(train_y)
 
-#for(i in 1:length(train_x_pca)){
-#  models[[i]]<-glm(nfkb_inhibitor~., data = data.frame(train_y_predictor,train_x_pca[i]))
-#  pvalues[[i]]<-coef(summary(models[[i]]))[2,4]
-#}
-
-
-cl<-makeCluster(10)
+cl<-makeCluster(4)
 registerDoParallel(cl)
 start_time<-Sys.time()
 print(glue("Started training models..."))
@@ -99,7 +91,7 @@ print(glue("Started training models..."))
 models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
   train_y_predictor<-train_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
   datamatrix<-xgb.DMatrix(data = as.matrix(train_x_pca), label = train_y_predictor)
-  xgboost(data = datamatrix, max.depth = 5, eta = 1, nthread = 10, nrounds = 5, objective = "binary:logistic", verbose = 0, eval.metric = "logloss")
+  xgboost(data = datamatrix, max.depth = 5, eta = 1, nthread = 4, nrounds = 5, objective = "binary:logistic", verbose = 0, eval.metric = "logloss")
 }
 end_time<-Sys.time()
 diff=difftime(end_time,start_time,units="secs")
@@ -120,9 +112,8 @@ loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost"
   logloss(temp,test_y_predictor)
 }
 
-submission=list()
 for(i in 1:length(predictors)){
-  submission[[predictors[i]]] = predict(models[[i]] , newdata = as.matrix(test_features))
+  sample_submission[[predictors[i]]] = predict(models[[i]] , newdata = as.matrix(test_features_pca))
 }
-write_csv(data.frame(sig_id,submission), 'submission.csv')
+write_csv(sample_submission, 'submission.csv')
 
