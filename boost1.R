@@ -1,5 +1,5 @@
 #!/bin/Rscript
-
+print("Starting...")
 library(glue)
 library(tidyverse) 
 library(MASS)
@@ -91,7 +91,7 @@ print(glue("Started training models..."))
 models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
   train_y_predictor<-train_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
   datamatrix<-xgb.DMatrix(data = as.matrix(train_x_pca), label = train_y_predictor)
-  xgboost(data = datamatrix, max.depth = 5, eta = 1, nthread = 4, nrounds = 5, objective = "binary:logistic", verbose = 0, eval.metric = "logloss")
+  xgboost(data = datamatrix, max.depth = 2, eta = 1, nthread = 4, nrounds = 5, objective = "binary:logistic", verbose = 0, eval.metric = "logloss", tree_method = "exact")
 }
 end_time<-Sys.time()
 diff=difftime(end_time,start_time,units="secs")
@@ -103,8 +103,9 @@ print(glue("Starting predictions..."))
 preds<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
   predict(models[[i]],newdata = as.matrix(test_x_pca))
 }
-print(glue("Prediction complete"))
+print(glue("Prediction complete!\n"))
 
+print(glue("Starting logloss calculation..."))
 loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
   test_y_predictor<-test_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
   
@@ -112,8 +113,11 @@ loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost"
   logloss(temp,test_y_predictor)
 }
 
+print(glue("Logloss on test data: {mean(loglosses%>%unlist()}\n"))
+
 for(i in 1:length(predictors)){
   sample_submission[[predictors[i]]] = predict(models[[i]] , newdata = as.matrix(test_features_pca))
 }
 write_csv(sample_submission, 'submission.csv')
 
+print("End...")
