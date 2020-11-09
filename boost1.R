@@ -51,7 +51,7 @@ fix_names <- function(df) {
 }
 
 # path_why <- "./project498/MoA-498/"
-path_why <- "/home/patel/project498/MoA-498/"
+path_why <- "../"
 
 train_features <- read_csv(glue("{path_why}lish-moa/train_features.csv")) 
 train_scores <- read_csv(glue("{path_why}lish-moa/train_targets_scored.csv"))
@@ -61,8 +61,14 @@ set.seed(42)
 test = sample(1:nrow(train_features), nrow(train_features)/10)
 train = -test
 
-train_x<-train_features[train,] %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
+
+train_cp_control<-train_features[train,] %>% dplyr::filter(cp_type == "ctl_vehicle")
+train_x<-train_features[train,] %>% dplyr::select(cp_type == "trt_cp") %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
 test_x<-train_features[test,] %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
+
+
+train_y<-train_scores[train,]%>% dplyr::select(cp_type == "trt_cp") %>% dplyr::select(-sig_id)
+test_y<-train_scores[test,]%>% dplyr::select(-sig_id)
 
 sig_id<-test_features %>% dplyr::select(sig_id)
 test_features<-test_features %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
@@ -79,11 +85,18 @@ test_x_pca<-predict(pca_cg, test_x_cg)
 test_features_pca<-predict(pca_cg,test_features_cg)
 print(glue("Completed PCA!"))
 
-train_y<-train_scores[train,]%>% dplyr::select(-sig_id)
-test_y<-train_scores[test,]%>% dplyr::select(-sig_id)
 predictors = names(train_y)
 
-cl<-makeCluster(4)
+depths = seq(10,100,5)
+alphas = seq(0.1,1,0.05)
+rounds = seq(10,100,10)
+
+for(alpha in (alphas)){
+
+  print(glue("Alpha = {alpha}"))
+  for(round in rounds){
+  print(glue("Round = {round}"))
+cl<-makeCluster(44)
 registerDoParallel(cl)
 start_time<-Sys.time()
 print(glue("Started training models..."))
@@ -91,7 +104,7 @@ print(glue("Started training models..."))
 models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
   train_y_predictor<-train_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
   datamatrix<-xgb.DMatrix(data = as.matrix(train_x_pca), label = train_y_predictor)
-  xgboost(data = datamatrix, max.depth = 2, eta = 1, nthread = 4, nrounds = 5, objective = "binary:logistic", verbose = 0, eval.metric = "logloss", tree_method = "exact")
+  xgboost(data = datamatrix, max.depth = 3, eta = alpha, nthread = 4, nrounds = round, objective = "binary:logistic", verbose = 0, eval.metric = "logloss", tree_method = "exact")
 }
 end_time<-Sys.time()
 diff=difftime(end_time,start_time,units="secs")
@@ -113,11 +126,15 @@ loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost"
   logloss(temp,test_y_predictor)
 }
 
-print(glue("Logloss on test data: {mean(loglosses%>%unlist()}\n"))
+print(glue("Logloss on test data: {mean(loglosses%>%unlist())}\n"))
 
-for(i in 1:length(predictors)){
-  sample_submission[[predictors[i]]] = predict(models[[i]] , newdata = as.matrix(test_features_pca))
+remove(list=c("models", "preds", "loglosses"))
 }
-write_csv(sample_submission, 'submission.csv')
+}
+
+#for(i in 1:length(predictors)){
+#  sample_submission[[predictors[i]]] = predict(models[[i]] , newdata = as.matrix(test_features_pca))
+#}
+#write_csv(sample_submission, 'submission.csv')
 
 print("End...")
