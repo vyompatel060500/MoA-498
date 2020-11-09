@@ -11,6 +11,7 @@ library(foreach)
 library(caret)
 library(e1071)
 library(xgboost)
+library(onehot)
 #$//$ Define functions here: $//$
 
 
@@ -45,38 +46,51 @@ important_features<-function(features, threshold){
   return (colnames(features)[columns])
 }
 
+convert_onehot<-function(x){
+  input<-x
+  trt_cnd = c('cp_type', 'cp_time', 'cp_dose')
+  cp<-input[,trt_cnd]
+  encoder<-onehot(cp)
+  temp_onehot<-predict(encoder,cp)
+  colnames(temp_onehot) <- c('type_ctl', 'type_cp', 'time_24', 'time_48', 'time_72', 'dose1', 'dose2')
+  #train_onehot <- cbind(temp_onehot, input ) %>% dplyr::select(-trt_cnd) %>%as_tibble()
+  return(as_tibble(temp_onehot))
+}
+
+
 fix_names <- function(df) {
   names(df) <- gsub('-', '_', names(df))
   df
 }
 
 # path_why <- "./project498/MoA-498/"
-path_why <- "../"
+path_why <- "/home/patel/project498/MoA-498/"
 
 train_features <- read_csv(glue("{path_why}lish-moa/train_features.csv")) 
 train_scores <- read_csv(glue("{path_why}lish-moa/train_targets_scored.csv"))
-test_features <- read_csv(glue("{path_why}lish-moa/test_features.csv"))
+test_features_input <- read_csv(glue("{path_why}lish-moa/test_features.csv"))
 sample_submission<-read_csv(glue("{path_why}lish-moa/sample_submission.csv"))
 set.seed(42)
 test = sample(1:nrow(train_features), nrow(train_features)/10)
 train = -test
 
+train_x<-train_features[train,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>% dplyr::select(-sig_id)
+test_x<-train_features[test,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time))%>% dplyr::select(-sig_id)
+test_features<-test_features_input %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>% dplyr::select(-sig_id)
 
-train_cp_control<-train_features[train,] %>% dplyr::filter(cp_type == "ctl_vehicle")
-train_x<-train_features[train,] %>% dplyr::select(cp_type == "trt_cp") %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
-test_x<-train_features[test,] %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
+#One-Hot encoding
+train_x_onehot<-convert_onehot(train_x)
+test_x_onehot<-convert_onehot(test_x)
+test_features_onehot<-convert_onehot(test_features)
 
-
-train_y<-train_scores[train,]%>% dplyr::select(cp_type == "trt_cp") %>% dplyr::select(-sig_id)
+train_y<-train_scores[train,]%>% dplyr::select(-sig_id)
 test_y<-train_scores[test,]%>% dplyr::select(-sig_id)
 
-sig_id<-test_features %>% dplyr::select(sig_id)
-test_features<-test_features %>% dplyr::select(-sig_id, -cp_type, -cp_time, -cp_dose)
+sig_id<-test_features_input %>% dplyr::select(sig_id)
 
-
-train_x_cg<-train_x%>%dplyr::select(starts_with('c') | starts_with('g'))
-test_x_cg<-test_x%>%dplyr::select(starts_with('c') | starts_with('g'))
-test_features_cg<-test_features%>%dplyr::select(starts_with('c') | starts_with('g'))
+train_x_cg<-train_x%>%dplyr::select(starts_with('c-') | starts_with('g'))
+test_x_cg<-test_x%>%dplyr::select(starts_with('c-') | starts_with('g'))
+test_features_cg<-test_features%>%dplyr::select(starts_with('c-') | starts_with('g'))
 
 print(glue("Starting PCA..."))
 pca_cg <- preProcess(train_x_cg, method = "pca", thresh = 0.8)
@@ -85,10 +99,13 @@ test_x_pca<-predict(pca_cg, test_x_cg)
 test_features_pca<-predict(pca_cg,test_features_cg)
 print(glue("Completed PCA!"))
 
+train_x_all<-cbind(train_x_onehot, train_x_pca) %>% as_tibble()
+test_x_all<-cbind(test_x_onehot, test_x_pca) %>% as_tibble()
+test_features_all<-cbind(test_features_onehot, test_features_pca) %>% as_tibble()
+
 predictors = names(train_y)
 
-depths = seq(10,100,5)
-alphas = seq(0.1,1,0.05)
+alphas = seq(0.1,0.5,0.05)
 rounds = seq(10,100,10)
 
 for(alpha in (alphas)){
@@ -96,15 +113,15 @@ for(alpha in (alphas)){
   print(glue("Alpha = {alpha}"))
   for(round in rounds){
   print(glue("Round = {round}"))
-cl<-makeCluster(44)
+cl<-makeCluster(10)
 registerDoParallel(cl)
 start_time<-Sys.time()
 print(glue("Started training models..."))
 
 models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
   train_y_predictor<-train_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
-  datamatrix<-xgb.DMatrix(data = as.matrix(train_x_pca), label = train_y_predictor)
-  xgboost(data = datamatrix, max.depth = 3, eta = alpha, nthread = 4, nrounds = round, objective = "binary:logistic", verbose = 0, eval.metric = "logloss", tree_method = "exact")
+  datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
+  xgboost(data = datamatrix, max.depth = 3, eta = 1, nthread = 4, nrounds = 5, objective = "binary:logistic", verbose = 0, eval.metric = "logloss", tree_method = "exact")
 }
 end_time<-Sys.time()
 diff=difftime(end_time,start_time,units="secs")
@@ -114,7 +131,7 @@ stopCluster(cl)
 
 print(glue("Starting predictions..."))
 preds<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
-  predict(models[[i]],newdata = as.matrix(test_x_pca))
+  pred<-predict(models[[i]],newdata = as.matrix(test_x_all))
 }
 print(glue("Prediction complete!\n"))
 
@@ -133,8 +150,9 @@ remove(list=c("models", "preds", "loglosses"))
 }
 
 #for(i in 1:length(predictors)){
-#  sample_submission[[predictors[i]]] = predict(models[[i]] , newdata = as.matrix(test_features_pca))
+#  sample_submission[[predictors[i]]] = predict(models[[i]] , newdata = as.matrix(test_features_all))
 #}
+
 #write_csv(sample_submission, 'submission.csv')
 
 print("End...")
