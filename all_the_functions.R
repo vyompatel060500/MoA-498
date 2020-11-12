@@ -5,8 +5,8 @@ logloss<-function(predicted, actual)
   # :param : actual- Ground truth (correct) 0-1 labels vector
   # :param : predicted- predicted values from the model
   # return: result- log-loss value
-  # result<- -1/length(actual)*(sum((actual*log(predicted)+(1-actual)*log(1-predicted))))
-  # return(result)
+  result <- -1/length(actual)*(sum((actual*log(predicted)+(1-actual)*log(1-predicted))))
+  return(result)
 }
 
 get_best_result = function(caret_fit) {

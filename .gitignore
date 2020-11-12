@@ -1,4 +1,7 @@
 lish-moa
+
 .RData
 .Rhistory
 .Rproj.user
+
+__pycache__/

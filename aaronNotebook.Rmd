@@ -28,10 +28,10 @@ source('all_the_functions.R')
 
 
 ```{r}
-
-# group by drug, how should this be done?
-
-
+preds <- readRDS('preds.rds')
+names(preds) <- colnames(train_y %>% dplyr::select(-sig_id))
+preds <- as_tibble(preds)
+preds
 ```
 
 
