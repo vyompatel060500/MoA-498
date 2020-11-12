@@ -112,14 +112,6 @@ test_x_all<-cbind(test_x_onehot, test_x_pca) %>% as_tibble()
 test_features_all<-cbind(test_features_onehot, test_features_pca) %>% as_tibble()
 
 
-alphas = seq(0.2,0.5,0.05)
-rounds = seq(20,70,10)
-
-for(alpha in (alphas)){
-
-  print(glue("Alpha = {alpha}"))
-  for(round in rounds){
-  print(glue("Round = {round}"))
 cl<-makeCluster(10)
 registerDoParallel(cl)
 start_time<-Sys.time()
@@ -128,7 +120,7 @@ print(glue("Started training models..."))
 models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
   train_y_predictor<-train_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
   datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
-  xgboost(data = datamatrix, max.depth = 2, eta = 0.2, nthread = 4, nrounds = 40, objective = "binary:logistic", verbose = 0, eval.metric = "logloss", tree_method = "gpu_hist")
+  xgboost(data = datamatrix, max.depth = 2, eta = 0.2, nthread = 4, nrounds = 40, objective = "binary:logistic", verbose = 0, eval.metric = "logloss", tree_method = "exact")
 }
 end_time<-Sys.time()
 diff=difftime(end_time,start_time,units="secs")
@@ -151,10 +143,6 @@ loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost"
 }
 
 print(glue("Logloss on test data: {mean(loglosses%>%unlist())}\n"))
-
-remove(list=c("models", "preds", "loglosses"))
-}
-}
 
 #for(i in 1:length(predictors)){
 #  sample_submission[[predictors[i]]] = predict(models[[i]] , newdata = as.matrix(test_features_all))
