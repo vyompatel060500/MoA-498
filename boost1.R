@@ -150,7 +150,9 @@ loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost"
 print(glue("Logloss on test data: {mean(loglosses%>%unlist())}\n"))
 
 for(i in 1:length(predictors)){
-  sample_submission[[predictors[i]]] = predict(models[[i]] , newdata = as.matrix(test_features_all))
+  pred = predict(models[[i]] , newdata = as.matrix(test_features_all))
+  pred[!test_features_not_ctl] = 0
+  sample_submission[[predictors[i]]] = pred
 }
 
 write_csv(sample_submission, 'submission.csv')
