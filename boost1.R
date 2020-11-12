@@ -70,23 +70,31 @@ train_features <- read_csv(glue("{path_why}lish-moa/train_features.csv"))
 train_scores <- read_csv(glue("{path_why}lish-moa/train_targets_scored.csv"))
 test_features_input <- read_csv(glue("{path_why}lish-moa/test_features.csv"))
 sample_submission<-read_csv(glue("{path_why}lish-moa/sample_submission.csv"))
-set.seed(42)
+set.seed(420)
 test = sample(1:nrow(train_features), nrow(train_features)/10)
 train = -test
+predictors = names(train_y)
 
-train_x<-train_features[train,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>% dplyr::select(-sig_id)
-test_x<-train_features[test,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time))%>% dplyr::select(-sig_id)
+
+train_x<-train_features[train,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time))
+test_x<-train_features[test,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>% dplyr::select(-sig_id)
 test_features<-test_features_input %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>% dplyr::select(-sig_id)
+
+train_y<-train_scores[train,]
+test_y<-train_scores[test,]%>% dplyr::select(-sig_id)
+sig_id<-test_features_input %>% dplyr::select(sig_id)
+
+non_vehicle_x<- train_x %>% dplyr::filter(cp_type == 'trt_cp')
+non_vehicle_y<- train_y %>% dplyr::inner_join(by="sig_id", tibble(sig_id = non_vehicle_x$sig_id), train_y)
+
+
+train_x_non_vehicle<-non_vehicle %>% select(predictors)
 
 #One-Hot encoding
 train_x_onehot<-convert_onehot(train_x)
 test_x_onehot<-convert_onehot(test_x)
 test_features_onehot<-convert_onehot(test_features)
 
-train_y<-train_scores[train,]%>% dplyr::select(-sig_id)
-test_y<-train_scores[test,]%>% dplyr::select(-sig_id)
-
-sig_id<-test_features_input %>% dplyr::select(sig_id)
 
 train_x_cg<-train_x%>%dplyr::select(starts_with('c-') | starts_with('g'))
 test_x_cg<-test_x%>%dplyr::select(starts_with('c-') | starts_with('g'))
@@ -103,10 +111,9 @@ train_x_all<-cbind(train_x_onehot, train_x_pca) %>% as_tibble()
 test_x_all<-cbind(test_x_onehot, test_x_pca) %>% as_tibble()
 test_features_all<-cbind(test_features_onehot, test_features_pca) %>% as_tibble()
 
-predictors = names(train_y)
 
-alphas = seq(0.1,0.5,0.05)
-rounds = seq(10,100,10)
+alphas = seq(0.2,0.5,0.05)
+rounds = seq(20,70,10)
 
 for(alpha in (alphas)){
 
@@ -121,7 +128,7 @@ print(glue("Started training models..."))
 models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
   train_y_predictor<-train_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
   datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
-  xgboost(data = datamatrix, max.depth = 3, eta = 1, nthread = 4, nrounds = 5, objective = "binary:logistic", verbose = 0, eval.metric = "logloss", tree_method = "exact")
+  xgboost(data = datamatrix, max.depth = 2, eta = 0.2, nthread = 4, nrounds = 40, objective = "binary:logistic", verbose = 0, eval.metric = "logloss", tree_method = "gpu_hist")
 }
 end_time<-Sys.time()
 diff=difftime(end_time,start_time,units="secs")
