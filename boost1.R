@@ -69,7 +69,7 @@ train_features <- read_csv(glue("{path_why}lish-moa/train_features.csv"))
 train_scores <- read_csv(glue("{path_why}lish-moa/train_targets_scored.csv"))
 test_features_input <- read_csv(glue("{path_why}lish-moa/test_features.csv"))
 sample_submission<-read_csv(glue("{path_why}lish-moa/sample_submission.csv"))
-set.seed(420)
+set.seed(498)
 test = sample(1:nrow(train_features), nrow(train_features)/10)
 train = -test
 train_y<-train_scores[train,] %>% dplyr::select(-sig_id)
@@ -96,20 +96,32 @@ test_not_ctl = test_x_onehot$type_ctl != 1
 test_features_not_ctl = test_features_onehot$type_ctl != 1
 
 
-train_x_cg<-train_x%>%dplyr::select(starts_with('c-') | starts_with('g'))
-test_x_cg<-test_x%>%dplyr::select(starts_with('c-') | starts_with('g'))
-test_features_cg<-test_features%>%dplyr::select(starts_with('c-') | starts_with('g'))
+train_x_g<-train_x%>%dplyr::select(starts_with('g-'))
+train_x_c<-train_x%>%dplyr::select(starts_with('c-'))
+test_x_g<-test_x%>%dplyr::select(starts_with('g-'))
+test_x_c<-test_x%>%dplyr::select(starts_with('c-'))
+test_feat_g<-test_features%>%dplyr::select(starts_with('g-'))
+test_feat_c<-test_features%>%dplyr::select(starts_with('c-'))
+
 
 print(glue("Starting PCA..."))
-pca_cg <- preProcess(train_x_cg, method = "pca", thresh = 0.8)
-train_x_pca<-predict(pca_cg,train_x_cg)
-test_x_pca<-predict(pca_cg, test_x_cg)
-test_features_pca<-predict(pca_cg,test_features_cg)
+pca_g = preProcess(train_x_g, method = 'pca', thresh = 0.8)
+pca_c = preProcess(train_x_c, method = 'pca', thresh = 0.85)
+train_x_g<-predict(pca_g, train_x_g)
+train_x_c<-predict(pca_c, train_x_c)
+test_x_g<-predict(pca_g, test_x_g)
+test_x_c<-predict(pca_c, test_x_c)
+test_feat_g<-predict(pca_g, test_feat_g)
+test_feat_c<-predict(pca_c, test_feat_c)
 print(glue("Completed PCA!"))
 
-train_x_all<-(cbind(train_x_onehot, train_x_pca) %>% as_tibble())[train_not_ctl,-c(1,2)]
-test_x_all<-(cbind(test_x_onehot, test_x_pca) %>% as_tibble())[,-c(1,2)]
-test_features_all<-(cbind(test_features_onehot, test_features_pca) %>% as_tibble())[,-c(1,2)]
+names(train_x_g)<-glue("PCg-{c(1:length(train_x_g))}")
+names(test_x_g)<-glue("PCg-{c(1:length(test_x_g))}")
+names(test_feat_g)<-glue("PCg-{c(1:length(test_feat_g))}")
+
+train_x_all<-(cbind(train_x_onehot, train_x_g, train_x_c) %>% as_tibble())[train_not_ctl,-c(1,2)]
+test_x_all<-(cbind(test_x_onehot, test_x_g, test_x_c) %>% as_tibble())[,-c(1,2)]
+test_features_all<-(cbind(test_features_onehot, test_feat_g, test_feat_c) %>% as_tibble())[,-c(1,2)]
 
 
 cl<-makeCluster(10)
@@ -120,7 +132,7 @@ print(glue("Started training models..."))
 models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
   train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
   datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
-  xgboost(data = datamatrix, max.depth = 2, eta = 0.2, nthread = 4, nrounds = 40, objective = "binary:logistic", tree_method = "gpu_hist")
+  xgboost(data = datamatrix, max.depth = 2, eta = 0.25, nthread = 4, nrounds = 40, objective = "binary:logistic", tree_method = "gpu_hist")
 }
 end_time<-Sys.time()
 diff=difftime(end_time,start_time,units="secs")
@@ -146,6 +158,16 @@ loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost"
   temp <- pmax(pmin(as.numeric(preds[[i]]), 1 - 1e-15), 1e-15)
   logloss(temp,test_y_predictor)
 }
+
+
+new_preds<-matrix(nrow = dim(test_x)[1], ncol = length(predictors))
+dimnames(new_preds) = list(test_x_sig_id %>% unlist(), predictors)
+new_preds<-data.frame(new_preds)
+for(i in 1:length(predictors)){
+  new_preds[i] = preds[[i]]
+}
+
+write_csv(new_preds,"preds_with_names.csv")
 
 print(glue("Logloss on test data: {mean(loglosses%>%unlist())}\n"))
 
