@@ -1,0 +1,231 @@
+---
+title: "Transfer Recipe with Smoothing"
+author: "Alan Cook"
+date: "09/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE, eval=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tensorflow)
+library(tidyverse)
+library(recipes)
+library(modelr)
+library(keras)
+```
+
+```{r}
+PATH <- "../input/lish-moa/"
+MODEL_PATH <- "./models/"
+
+SEEDS <- c(3,12,29,5) #using 4 seeds for quicker tests
+KFOLDS <- 10
+P_MIN <- 0.001
+P_MAX <- 0.999
+```
+
+
+
+```{r}
+train_features = read_csv(str_c(PATH,"train_features.csv"))
+test_features = read_csv(str_c(PATH,"test_features.csv"))
+
+keep_rows <- train_features$cp_type != "ctl_vehicle"
+train_features <- train_features[keep_rows,]
+```
+
+
+
+```{r}
+non_scored <- read_csv(str_c(PATH, "train_targets_nonscored.csv")) %>%
+  select(-sig_id) %>%
+  filter(keep_rows) %>%
+  data.matrix()
+
+train_scored <- read_csv(str_c(PATH, "train_targets_scored.csv")) %>%
+  select(-sig_id) %>%
+  filter(keep_rows) %>%
+  data.matrix()
+  
+sub <- read_csv(str_c(PATH, "sample_submission.csv")) %>%
+  mutate(across(where(is.numeric), ~0))
+```
+
+
+
+```{r}
+(rec <- train_features %>%
+   recipe(~ .) %>%
+   step_rm(sig_id,cp_type) %>%
+   step_mutate(g_mean = apply(across(starts_with("g-")), 1, mean), c_mean = apply(across(starts_with("c-")), 1, mean)) %>%
+   step_mutate_at(starts_with("cp_"), fn = list(as_factor)) %>%
+   step_mutate_at(contains("g-"), fn = list(copy_g = function(x) x)) %>%
+   step_mutate_at(contains("c-"), fn = list(copy_c = function(x) x)) %>%
+   step_dummy(starts_with("cp_")) %>%
+   step_normalize(!starts_with("cp_")) %>%
+   step_pca(contains("copy_g"), num_comp = 2, prefix = "g_pca") %>%
+   step_pca(contains("copy_c"), num_comp = 100, prefix = "c_pca") %>%
+   prep())
+```
+
+
+```{r}
+X<- juice(rec, composition = "matrix")
+X_test <- bake(rec, test_features, composition = "matrix")
+```
+
+
+
+
+
+# Naive shuffling, to create 92 buckets of approx. 256 "balanced" samples (= batch size).
+<!---
+```{r}
+set.seed(987415)
+df <- cbind(train_features,train_y, non_scored)
+df <- df[sample(nrow(df)),] # Just in case...
+
+df$bucket <- 0
+suma <- rep(0,206)
+for (j in 876:1081) {
+    suma[j-875] <- sum(df[,j])
+    #cat(j, "suma =", suma[j], "\n")
+    row <- as.integer(rownames(df[which(df[,j] == 1),]))
+    
+    if (length(row) <= 92) {
+        bucket <- sample(92,length(row))
+        df[row,]$bucket <- bucket
+    }
+    else {
+        q <- length(row)%/% 92
+        c1 <- rep(1:92,q)
+        r <- length(row)%%92
+        bucket <- sample(92,r)
+        df[row,]$bucket <- c(c1,bucket)
+    }
+}
+
+row0 <- as.integer(rownames(df[which(df$bucket == 0),]))
+q0 <- length(row0)%/% 92
+c0 <- rep(1:92,q0)
+r0 <- length(row0)%%92
+bucket0 <- sample(92,r0)
+df[row0,]$bucket <- c(c0,bucket0)
+
+row1 <- as.integer(rownames(df[which(df$bucket == 0),]))
+z0 <- rep(0,92)
+for (i in 1:92) {z0[i] <- sum(df$bucket == i)}
+
+df <- df[order(df$bucket),]
+df$bucket <- NULL
+
+length(suma)
+
+train <- df[,1:875]
+train_y <- df[,876:1081]
+non_scored <- df[,1082:1403]
+```
+--->
+
+```{r}
+logloss <- function(y,y_h) {
+  y_h <- k_clip(y_h, P_MIN, P_MAX)
+  -k_mean(y*k_log(y_h) + (1-y)*k_log(1-y_h))
+}
+```
+
+```{r}
+create_nn <- function(ncol_X, ncol_Y) {
+  keras_model_sequential() %>%
+    layer_batch_normalization(input_shape = ncol_X) %>%
+    layer_dropout(0.2) %>%
+    layer_dense(512, "elu") %>%
+    layer_batch_normalization() %>%
+    layer_dense(256,"elu") %>%
+    layer_batch_normalization() %>%
+    layer_dense(ncol_Y, "sigmoid") %>% 
+      keras::compile(optimizer = "adam",
+                   loss = tf$losses$BinaryCrossentropy(label_smoothing = 0.001),
+                   metrics = logloss)
+}
+```
+
+
+```{r}
+callbacks <- function() {
+  list(callback_early_stopping(patience = 10, min_delta = 1e-05),
+       callback_model_checkpoint(str_c(MODEL_PATH, file_name), save_best_only = TRUE, verbose = 0, mode = "auto"),
+       callback_reduce_lr_on_plateau(factor = 0.2, patience = 5, verbose = 0, mode = "auto"))
+}
+```
+
+```{r}
+scores <- c()
+for(s in SEEDS) {
+  
+  set.seed(s)
+  k = 0
+  
+  for(rs in crossv_kfold(train_features, KFOLDS)$train) {
+    tri <- as.integer(rs)
+    k = k + 1
+    file_name = paste0('model weights of seed ',s,' fold ', k, '.h5')
+#    m_nn0 <- create_nn(ncol(X), ncol(Y0))
+#    m_nn0 %>% keras::fit(X[tri, ], Y0[tri, ],
+#                         epochs = 100,
+#                         batch_size = 128,
+#                         validation_data = list(X[-tri, ], Y0[-tri,]),
+#                         callbacks = callbacks(),
+#                         view_metrics = FALSE,
+#                         verbose = 0)
+#    load_model_weights_hdf5(m_nn0, "model.h5")
+    
+    m_nn <- create_nn(ncol(X), ncol(train_scored))
+    
+#    for(i in 1:(length(m_nn$layers)-1))set_weights(m_nn$layers[[i]],get_weights(m_nn0$layers[[i]]))
+
+    hist <- m_nn %>% keras::fit(X[tri, ], train_scored[tri, ],
+                                epochs = 100,
+                                batch_size = 128,
+                                validation_data = list(X[-tri,], train_scored[-tri,]),
+                                callbacks = callbacks(),
+                                view_metrics = FALSE,
+                                verbose = 0)
+    load_model_weights_hdf5(m_nn,str_c(MODEL_PATH, file_name))
+    
+    scores <- c(scores, min(hist$metrics$val_loss))
+    cat("Best val-loss:", min(hist$metrics$val_loss), "at", which.min(hist$metrics$val_loss), "step\n")
+    
+    sub[, -1] <- sub[, -1] + predict(m_nn, X_test) / KFOLDS/length(SEEDS)
+    
+    rm(tri, m_nn, hist)
+  }
+}
+```
+
+
+```{r}
+summary(scored_loss)
+summary(scores_val_loss)
+
+cat("\nMean score:", mean(scores), "\n")
+```
+
+```{r}
+sub[test_features$cp_type=="ctl_vehicle", -1] <-0
+write_csv(sub,"submission.csv")
+subsample <- read_csv("../input/lish-moa/sample_submission.csv")
+```
+
+
+
+
+
+
+
+
+
