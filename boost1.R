@@ -126,60 +126,80 @@ test_x_all<-(cbind(test_x_onehot, test_x_g, test_x_c) %>% as_tibble())[,-c(1,2)]
 test_features_all<-(cbind(test_features_onehot, test_feat_g, test_feat_c) %>% as_tibble())[,-c(1,2)]
 
 
-cl<-makeCluster(10)
-registerDoParallel(cl)
-start_time<-Sys.time()
-print(glue("Started training models..."))
+function <- train_models(params) {
 
-models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
-  train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
-  datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
-  p = list(colsample_bynode=0.8, learning_rate=1, max_depth=5, num_parallel_tree=100, objective='binary:logistic', subsample=0.8, tree_method='gpu_hist')
-  xgboost(data = datamatrix, params = p)
+    cl<-makeCluster(10)
+    registerDoParallel(cl)
+    start_time<-Sys.time()
+    print(glue("Started training models..."))
+
+    models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
+      train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
+      datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
+      #p = list(colsample_bynode=0.8, learning_rate=1, max_depth=5, num_parallel_tree=100, objective='binary:logistic', subsample=0.8, tree_method='gpu_hist')
+      xgboost(data = datamatrix, params = params)
+    }
+    end_time<-Sys.time()
+    diff=difftime(end_time,start_time,units="secs")
+    print(glue("Training Complete!"))
+    print(glue("Time taken for training models: {diff} seconds."))
+    stopCluster(cl)
+
+    print(glue("Starting predictions..."))
+    preds<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
+      pred<-predict(models[[i]],newdata = as.matrix(test_x_all))
+    }
+    print(glue("Prediction complete!\n"))
+
+
+    for(i in 1:length(preds)){
+      preds[[i]][!test_not_ctl] = 0
+    }
+
+    print(glue("Starting logloss calculation..."))
+    loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
+      test_y_predictor<-test_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
+      
+      temp <- pmax(pmin(as.numeric(preds[[i]]), 1 - 1e-15), 1e-15)
+      logloss(temp,test_y_predictor)
+    }
+
+
+    #new_preds<-matrix(nrow = dim(test_x)[1], ncol = length(predictors))
+    #dimnames(new_preds) = list(test_x_sig_id %>% unlist(), predictors)
+    #new_preds<-data.frame(new_preds)
+    #for(i in 1:length(predictors)){
+    #  new_preds[i] = preds[[i]]
+    #}
+
+    #write_csv(new_preds,"preds_with_names.csv")
+
+    return_value=glue("Logloss on test data: {mean(loglosses%>%unlist()); params: {paste(unlist(params, collapse=','))}}\n")
 }
-end_time<-Sys.time()
-diff=difftime(end_time,start_time,units="secs")
-print(glue("Training Complete!"))
-print(glue("Time taken for training models: {diff} seconds."))
-stopCluster(cl)
 
-print(glue("Starting predictions..."))
-preds<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
-  pred<-predict(models[[i]],newdata = as.matrix(test_x_all))
-}
-print(glue("Prediction complete!\n"))
+param_grid <- expand.grid(
+   list(
+     colsample_bynode=0.8,
+     learning_rate=1,
+     max_depth=5,
+     num_parallel_tree=100,
+     objective='binary:logistic',
+     subsample=0.8,
+     tree_method='exact'
+   )
+)
 
-
-for(i in 1:length(preds)){
-  preds[[i]][!test_not_ctl] = 0
-}
-
-print(glue("Starting logloss calculation..."))
-loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
-  test_y_predictor<-test_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
-  
-  temp <- pmax(pmin(as.numeric(preds[[i]]), 1 - 1e-15), 1e-15)
-  logloss(temp,test_y_predictor)
+results <- purrr::pmap_dfr(param_grid, function(...) {
+    train_models(...)
 }
 
 
-#new_preds<-matrix(nrow = dim(test_x)[1], ncol = length(predictors))
-#dimnames(new_preds) = list(test_x_sig_id %>% unlist(), predictors)
-#new_preds<-data.frame(new_preds)
 #for(i in 1:length(predictors)){
-#  new_preds[i] = preds[[i]]
+#  pred = predict(models[[i]] , newdata = as.matrix(test_features_all))
+#  pred[!test_features_not_ctl] = 0
+#  sample_submission[[predictors[i]]] = pred
 #}
-
-#write_csv(new_preds,"preds_with_names.csv")
-
-print(glue("Logloss on test data: {mean(loglosses%>%unlist())}\n"))
-
-for(i in 1:length(predictors)){
-  pred = predict(models[[i]] , newdata = as.matrix(test_features_all))
-  pred[!test_features_not_ctl] = 0
-  sample_submission[[predictors[i]]] = pred
-}
-
-write_csv(sample_submission, 'submission.csv')
+#
+#write_csv(sample_submission, 'submission.csv')
 
 print("End...")
