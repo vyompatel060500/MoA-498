@@ -134,7 +134,7 @@ print(glue("Started training models..."))
 models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
   train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
   datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
-  p = list('colsample_bynode': 0.8,'learning_rate': 1,'max_depth': 5,'num_parallel_tree': 100,'objective': 'binary:logistic','subsample': 0.8,'tree_method': 'gpu_hist')
+  p = list(colsample_bynode=0.8, learning_rate=1, max_depth=5, num_parallel_tree=100, objective='binary:logistic', subsample=0.8, tree_method='gpu_hist')
   xgboost(data = datamatrix, params = p)
 }
 end_time<-Sys.time()
