@@ -129,16 +129,18 @@ test_features_all<-(cbind(test_features_onehot, test_feat_g, test_feat_c) %>% as
 
 train_models <- function(params) {
 
-    cl<-makeCluster(10)
+    cl<-makeCluster(44)
     registerDoParallel(cl)
     start_time<-Sys.time()
     print(glue("Started training models..."))
 
-    models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
+    print(train_y)
+
+    models<-foreach(i=1:length(predictors), .packages=c("glue","dplyr","xgboost"), .export=ls(globalenv())) %dopar% {
       train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
       datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
       #p = list(colsample_bynode=0.8, learning_rate=1, max_depth=5, num_parallel_tree=100, objective='binary:logistic', subsample=0.8, tree_method='gpu_hist')
-      xgboost(data = datamatrix, params = params)
+      xgboost(data = datamatrix, nrounds=10, params = params)
     }
     end_time<-Sys.time()
     diff=difftime(end_time,start_time,units="secs")
@@ -193,8 +195,8 @@ param_grid <- expand.grid(
 )
 
 results <- purrr::pmap_dfr(param_grid, function(...) {
-    train_models(...)
-}
+    train_models(list(...))
+})
 
 
 #for(i in 1:length(predictors)){
