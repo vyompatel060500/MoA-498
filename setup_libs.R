@@ -18,7 +18,8 @@ list.of.packages <- c(
 "doParallel",
 "caret",
 "e1071",
-"xgboost"
+"xgboost",
+"onehot"
 )
 
 # create local user library path (not present by default)
