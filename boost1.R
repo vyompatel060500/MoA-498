@@ -175,7 +175,9 @@ train_models <- function(params) {
 
     #write_csv(new_preds,"preds_with_names.csv")
 
-    return_value=glue("Logloss on test data: {mean(loglosses%>%unlist()); params: {paste(unlist(params, collapse=','))}}\n")
+    return_value=glue::glue("Logloss on test data: {mean(loglosses%>%unlist()); params: {paste(unlist(params, collapse=','))}}\n")
+    print(return_value)
+    return_value
 }
 
 param_grid <- expand.grid(
@@ -187,7 +189,8 @@ param_grid <- expand.grid(
      objective='binary:logistic',
      subsample=0.8,
      tree_method='exact'
-   )
+   ),
+   stringsAsFactors=FALSE
 )
 
 results <- purrr::pmap_dfr(param_grid, function(...) {
