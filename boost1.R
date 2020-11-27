@@ -69,6 +69,8 @@ train_features <- read_csv(glue("{path_why}lish-moa/train_features.csv"))
 train_scores <- read_csv(glue("{path_why}lish-moa/train_targets_scored.csv"))
 test_features_input <- read_csv(glue("{path_why}lish-moa/test_features.csv"))
 sample_submission<-read_csv(glue("{path_why}lish-moa/sample_submission.csv"))
+tSNE<-read_csv(glue("{path_why}lish-moa/tsne4dims.csv"))
+
 set.seed(498)
 test = sample(1:nrow(train_features), nrow(train_features)/10)
 train = -test
@@ -81,8 +83,8 @@ test_features_sig_id<-test_features_input %>% dplyr::select(sig_id)
 train_x<-train_features[train,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>%dplyr::select(-sig_id)
 test_x<-train_features[test,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>% dplyr::select(-sig_id)
 test_features<-test_features_input %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>% dplyr::select(-sig_id)
-
-
+#tSNE_train<-tSNE[train,]
+#tSNE_test<-tSNE[test,]
 test_y<-train_scores[test,]%>% dplyr::select(-sig_id)
 
 
@@ -105,8 +107,8 @@ test_feat_c<-test_features%>%dplyr::select(starts_with('c-'))
 
 
 print(glue("Starting PCA..."))
-pca_g = preProcess(train_x_g, method = 'pca', thresh = 0.8)
-pca_c = preProcess(train_x_c, method = 'pca', thresh = 0.85)
+pca_g = preProcess(train_x_g, method = 'pca', thresh = 0.80)
+pca_c = preProcess(train_x_c, method = 'pca', thresh = 0.80)
 train_x_g<-predict(pca_g, train_x_g)
 train_x_c<-predict(pca_c, train_x_c)
 test_x_g<-predict(pca_g, test_x_g)
@@ -132,7 +134,8 @@ print(glue("Started training models..."))
 models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
   train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
   datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
-  xgboost(data = datamatrix, max.depth = 2, eta = 0.25, nthread = 4, nrounds = 40, objective = "binary:logistic", tree_method = "gpu_hist")
+  p = list('colsample_bynode': 0.8,'learning_rate': 1,'max_depth': 5,'num_parallel_tree': 100,'objective': 'binary:logistic','subsample': 0.8,'tree_method': 'gpu_hist')
+  xgboost(data = datamatrix, params = p)
 }
 end_time<-Sys.time()
 diff=difftime(end_time,start_time,units="secs")
@@ -160,14 +163,14 @@ loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost"
 }
 
 
-new_preds<-matrix(nrow = dim(test_x)[1], ncol = length(predictors))
-dimnames(new_preds) = list(test_x_sig_id %>% unlist(), predictors)
-new_preds<-data.frame(new_preds)
-for(i in 1:length(predictors)){
-  new_preds[i] = preds[[i]]
-}
+#new_preds<-matrix(nrow = dim(test_x)[1], ncol = length(predictors))
+#dimnames(new_preds) = list(test_x_sig_id %>% unlist(), predictors)
+#new_preds<-data.frame(new_preds)
+#for(i in 1:length(predictors)){
+#  new_preds[i] = preds[[i]]
+#}
 
-write_csv(new_preds,"preds_with_names.csv")
+#write_csv(new_preds,"preds_with_names.csv")
 
 print(glue("Logloss on test data: {mean(loglosses%>%unlist())}\n"))
 
