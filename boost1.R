@@ -63,13 +63,14 @@ fix_names <- function(df) {
 }
 
 # path_why <- "./project498/MoA-498/"
-path_why <- "/home/patel/project498/MoA-498/"
+# path_why <- "/home/patel/project498/MoA-498/"
+path_why <- "./"
 
 train_features <- read_csv(glue("{path_why}lish-moa/train_features.csv")) 
 train_scores <- read_csv(glue("{path_why}lish-moa/train_targets_scored.csv"))
 test_features_input <- read_csv(glue("{path_why}lish-moa/test_features.csv"))
 sample_submission<-read_csv(glue("{path_why}lish-moa/sample_submission.csv"))
-tSNE<-read_csv(glue("{path_why}lish-moa/tsne4dims.csv"))
+# tSNE<-read_csv(glue("{path_why}lish-moa/tsne4dims.csv"))
 
 set.seed(498)
 test = sample(1:nrow(train_features), nrow(train_features)/10)
@@ -126,7 +127,7 @@ test_x_all<-(cbind(test_x_onehot, test_x_g, test_x_c) %>% as_tibble())[,-c(1,2)]
 test_features_all<-(cbind(test_features_onehot, test_feat_g, test_feat_c) %>% as_tibble())[,-c(1,2)]
 
 
-function <- train_models(params) {
+train_models <- function(params) {
 
     cl<-makeCluster(10)
     registerDoParallel(cl)
