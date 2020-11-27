@@ -146,6 +146,7 @@ test_features_all<-(cbind(test_features_onehot, test_feat_g, test_feat_c) %>% as
 #stopCluster(cl)
 #
 #saveRDS(models, 'xgboost_boost2_R_models.rds')
+print(glue("Loading xgboost models"))
 models <- readRDS('xgboost_boost2_R_models.rds')
 
 #print(glue("Starting predictions on train data..."))
@@ -155,24 +156,26 @@ models <- readRDS('xgboost_boost2_R_models.rds')
 #print(glue("Prediction complete!\n"))
 
 #saveRDS(train_preds, "train_preds.rds")
+print(glue("Loading xgboost train_preds"))
 train_preds <- readRDS("train_preds.rds")
 
-cl<-makeCluster(44)
-registerDoParallel(cl)
-models_logistic<-foreach(i=1:length(predictors) , .packages=c("glue","dplyr","speedglm")) %dopar%{
-  train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
-  out <- tryCatch({
-    speedglm(train_y_predictor~., data = data.frame(train_preds, tSNE_train[train_not_ctl, ]), family = binomial(), maxit = 50)
-  },
-  error=function(cond) {
-    return(NA)
-  })
-  out
-}
-stopCluster(cl)
-
-saveRDS(models_logistic, 'models_logistic.rds')
-models_logistic <- readRDS(models_logistic)
+#cl<-makeCluster(44)
+#registerDoParallel(cl)
+#models_logistic<-foreach(i=1:length(predictors) , .packages=c("glue","dplyr","speedglm")) %dopar%{
+#  train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
+#  out <- tryCatch({
+#    speedglm(train_y_predictor~., data = data.frame(train_preds, tSNE_train[train_not_ctl, ]), family = binomial(), maxit = 50)
+#  },
+#  error=function(cond) {
+#    return(NA)
+#  })
+#  out
+#}
+#stopCluster(cl)
+#
+#saveRDS(models_logistic, 'models_logistic.rds')
+print(glue("Loading logistic models (large, 2.6+ GB)"))
+models_logistic <- readRDS('models_logistic.rds')
 
 print(glue("Starting predictions..."))
 preds_xgb<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
@@ -181,7 +184,7 @@ preds_xgb<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost"
 print(glue("Prediction complete!\n"))
 
 saveRDS(preds_xgb, 'preds_xgb.rds')
-preds_xgb <- readRDS(preds_xgb)
+preds_xgb <- readRDS('preds_xgb.rds')
 
 print(glue("Starting predictions on test data..."))
 preds<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","speedglm")) %do% {
@@ -223,6 +226,7 @@ loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost"
 #write_csv(new_preds,"preds_with_names.csv")
 
 print(glue("Logloss on test data: {mean(loglosses%>%unlist())}\n"))
+print(glue("Logloss summaries on test data: {summary(loglosses%>%unlist())}\n"))
 
 #for(i in 1:length(predictors)){
 #  pred = predict(models[[i]] , newdata = as.matrix(test_features_all))

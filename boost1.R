@@ -173,21 +173,19 @@ train_models <- function(params) {
     #}
 
     #write_csv(new_preds,"preds_with_names.csv")
-    saveRDS(params, 'DEBUGGING_params.rds')
-    saveRDS(loglosses, 'DEBUGGING_loglosses.rds')
-    browser()
+    saveRDS(loglosses, glue('loglosses_xgboostgridsearch_{paste0(names(params), params, collapse="_")}.rds'))
 
-    return_value=glue("Logloss on test data: {mean(loglosses%>%unlist()); params: {paste(unlist(params), collapse=',')}}\n")
+    return_value=glue("Logloss on test data: {mean(unlist(loglosses))}; params: {paste(names(params), params, collapse=',')}\n")
     print(return_value)
     return_value
 }
 
 param_grid <- expand.grid(
    list(
-     eta=c(0.1,0.2,0.3,0.4),
+     eta=c(0.05,0.15,0.3),
      colsample_bynode=c(1.0, 0.7),
      max_depth=c(2,3),
-     num_parallel_tree=c(1, 100),
+     num_parallel_tree=c(1, 1000),
      objective='binary:logistic',
      subsample=c(1.0, 0.7),
      tree_method='exact'
@@ -198,6 +196,8 @@ param_grid <- expand.grid(
 results <- purrr::pmap_dfr(param_grid, function(...) {
     train_models(list(...))
 })
+
+saveRDS(results, "LOGLOSS_GRID_SEARCH_FINAL_RESULTS.rds")
 
 
 #for(i in 1:length(predictors)){
