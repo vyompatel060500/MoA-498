@@ -173,6 +173,9 @@ train_models <- function(params) {
     #}
 
     #write_csv(new_preds,"preds_with_names.csv")
+    saveRDS(params, 'DEBUGGING_params.rds')
+    saveRDS(loglosses, 'DEBUGGING_loglosses.rds')
+    browser()
 
     return_value=glue("Logloss on test data: {mean(loglosses%>%unlist()); params: {paste(unlist(params), collapse=',')}}\n")
     print(return_value)
@@ -182,11 +185,11 @@ train_models <- function(params) {
 param_grid <- expand.grid(
    list(
      eta=c(0.1,0.2,0.3,0.4),
-     colsample_bynode=c(1, 0.7),
+     colsample_bynode=c(1.0, 0.7),
      max_depth=c(2,3),
      num_parallel_tree=c(1, 100),
      objective='binary:logistic',
-     subsample=c(1, 0.7),
+     subsample=c(1.0, 0.7),
      tree_method='exact'
    ),
    stringsAsFactors=FALSE

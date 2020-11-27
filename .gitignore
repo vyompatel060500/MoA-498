@@ -1,7 +1,14 @@
 lish-moa
 
+*.swp
+
 .RData
 .Rhistory
 .Rproj.user
 
 __pycache__/
+ M boost1.R
+ M boost2.R
+
+# 2+ GB file here...
+models_logistic.rds

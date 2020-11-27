@@ -14,6 +14,8 @@ library(xgboost)
 library(onehot)
 #$//$ Define functions here: $//$
 
+### boost2.R!!
+options(error=recover)
 
 logloss<-function(predicted, actual)
 {   #function to compute the Log-Loss
@@ -170,7 +172,7 @@ models_logistic<-foreach(i=1:length(predictors) , .packages=c("glue","dplyr","sp
 stopCluster(cl)
 
 saveRDS(models_logistic, 'models_logistic.rds')
-models_logistic <- loadRDS(models_logistic)
+models_logistic <- readRDS(models_logistic)
 
 print(glue("Starting predictions..."))
 preds_xgb<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
@@ -179,7 +181,7 @@ preds_xgb<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost"
 print(glue("Prediction complete!\n"))
 
 saveRDS(preds_xgb, 'preds_xgb.rds')
-preds_xgb <- loadRDS(preds_xgb)
+preds_xgb <- readRDS(preds_xgb)
 
 print(glue("Starting predictions on test data..."))
 preds<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","speedglm")) %do% {
