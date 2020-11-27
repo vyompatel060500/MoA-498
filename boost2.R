@@ -151,9 +151,9 @@ test_features_all<-(cbind(test_features_onehot, test_feat_g, test_feat_c) %>% as
 # print(glue("Prediction complete!\n"))
 
 #saveRDS(train_preds, "train_preds.rds")
-train_preds <- loadRDS("train_preds.rds")
+train_preds <- readRDS("train_preds.rds")
 
-cl<-makeCluster(10)
+cl<-makeCluster(44)
 registerDoParallel(cl)
 models_logistic<-foreach(i=1:length(predictors) , .packages=c("glue","dplyr","speedglm")) %dopar%{
   train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
@@ -211,6 +211,6 @@ for(i in 1:length(predictors)){
   sample_submission[[predictors[i]]] = pred
 }
 
-write_csv(sample_submission, 'submission.csv')
+write_csv(sample_submission, 'logistics_submission.csv')
 
 print("End...")
