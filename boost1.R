@@ -14,6 +14,7 @@ library(xgboost)
 library(onehot)
 #$//$ Define functions here: $//$
 
+options(error=recover)
 
 logloss<-function(predicted, actual)
 {   #function to compute the Log-Loss
@@ -126,7 +127,6 @@ train_x_all<-(cbind(train_x_onehot, train_x_g, train_x_c) %>% as_tibble())[train
 test_x_all<-(cbind(test_x_onehot, test_x_g, test_x_c) %>% as_tibble())[,-c(1,2)]
 test_features_all<-(cbind(test_features_onehot, test_feat_g, test_feat_c) %>% as_tibble())[,-c(1,2)]
 
-
 train_models <- function(params) {
 
     cl<-makeCluster(10)
@@ -165,7 +165,6 @@ train_models <- function(params) {
       logloss(temp,test_y_predictor)
     }
 
-
     #new_preds<-matrix(nrow = dim(test_x)[1], ncol = length(predictors))
     #dimnames(new_preds) = list(test_x_sig_id %>% unlist(), predictors)
     #new_preds<-data.frame(new_preds)
@@ -175,7 +174,7 @@ train_models <- function(params) {
 
     #write_csv(new_preds,"preds_with_names.csv")
 
-    return_value=glue::glue("Logloss on test data: {mean(loglosses%>%unlist()); params: {paste(unlist(params, collapse=','))}}\n")
+    return_value=glue("Logloss on test data: {mean(loglosses%>%unlist()); params: {paste(unlist(params, collapse=','))}}\n")
     print(return_value)
     return_value
 }
