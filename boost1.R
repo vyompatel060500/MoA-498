@@ -134,13 +134,11 @@ train_models <- function(params) {
     start_time<-Sys.time()
     print(glue("Started training models..."))
 
-    print(train_y)
-
     models<-foreach(i=1:length(predictors), .packages=c("glue","dplyr","xgboost"), .export=ls(globalenv())) %dopar% {
       train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
       datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
       #p = list(colsample_bynode=0.8, learning_rate=1, max_depth=5, num_parallel_tree=100, objective='binary:logistic', subsample=0.8, tree_method='gpu_hist')
-      xgboost(data = datamatrix, nrounds=10, params = params)
+      xgboost(data = datamatrix, nrounds=80, params = params)
     }
     end_time<-Sys.time()
     diff=difftime(end_time,start_time,units="secs")
@@ -176,19 +174,19 @@ train_models <- function(params) {
 
     #write_csv(new_preds,"preds_with_names.csv")
 
-    return_value=glue("Logloss on test data: {mean(loglosses%>%unlist()); params: {paste(unlist(params, collapse=','))}}\n")
+    return_value=glue("Logloss on test data: {mean(loglosses%>%unlist()); params: {paste(unlist(params), collapse=',')}}\n")
     print(return_value)
     return_value
 }
 
 param_grid <- expand.grid(
    list(
-     colsample_bynode=0.8,
-     learning_rate=1,
-     max_depth=5,
-     num_parallel_tree=100,
+     eta=c(0.1,0.2,0.3,0.4),
+     colsample_bynode=c(1, 0.7),
+     max_depth=c(2,3),
+     num_parallel_tree=c(1, 100),
      objective='binary:logistic',
-     subsample=0.8,
+     subsample=c(1, 0.7),
      tree_method='exact'
    ),
    stringsAsFactors=FALSE
