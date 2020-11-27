@@ -70,7 +70,7 @@ train_features <- read_csv(glue("{path_why}lish-moa/train_features.csv"))
 train_scores <- read_csv(glue("{path_why}lish-moa/train_targets_scored.csv"))
 test_features_input <- read_csv(glue("{path_why}lish-moa/test_features.csv"))
 sample_submission<-read_csv(glue("{path_why}lish-moa/sample_submission.csv"))
-#tSNE<-read_csv(glue("{path_why}lish-moa/tsne4dims.csv"))
+tSNE<-read_csv(glue("{path_why}tsne4dims.csv"))
 
 set.seed(498)
 test = sample(1:nrow(train_features), nrow(train_features)/10)
@@ -84,8 +84,8 @@ test_features_sig_id<-test_features_input %>% dplyr::select(sig_id)
 train_x<-train_features[train,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>%dplyr::select(-sig_id)
 test_x<-train_features[test,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>% dplyr::select(-sig_id)
 test_features<-test_features_input %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>% dplyr::select(-sig_id)
-#tSNE_train<-tSNE[train,]
-#tSNE_test<-tSNE[test,]
+tSNE_train<-tSNE[train,]
+tSNE_test<-tSNE[test,]
 test_y<-train_scores[test,]%>% dplyr::select(-sig_id)
 
 
@@ -126,29 +126,31 @@ train_x_all<-(cbind(train_x_onehot, train_x_g, train_x_c) %>% as_tibble())[train
 test_x_all<-(cbind(test_x_onehot, test_x_g, test_x_c) %>% as_tibble())[,-c(1,2)]
 test_features_all<-(cbind(test_features_onehot, test_feat_g, test_feat_c) %>% as_tibble())[,-c(1,2)]
 
-# 
-# cl<-makeCluster(4)
-# registerDoParallel(cl)
-# start_time<-Sys.time()
-# print(glue("Started training models..."))
-# 
-# models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
-#   train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
-#   datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
-#   xgboost(data = datamatrix, learning_rate=0.25, max_depth = 3, nrounds = 40, objective = 'binary:logistic', tree_method = 'gpu_hist')
-# }
-# end_time<-Sys.time()
-# diff=difftime(end_time,start_time,units="secs")
-# print(glue("Training Complete!"))
-# print(glue("Time taken for training models: {diff} seconds."))
-# stopCluster(cl)
-# 
-# 
-# print(glue("Starting predictions on train data..."))
-# train_preds<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
-#   pred<-predict(models[[i]],newdata = as.matrix(train_x_all))
-# }
-# print(glue("Prediction complete!\n"))
+
+#cl<-makeCluster(44)
+#registerDoParallel(cl)
+#start_time<-Sys.time()
+#print(glue("Started training models..."))
+#
+#models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
+#  train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
+#  datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
+#  xgboost(data = datamatrix, learning_rate=0.25, max_depth = 3, nrounds = 40, objective = 'binary:logistic', tree_method = 'exact')
+#}
+#end_time<-Sys.time()
+#diff=difftime(end_time,start_time,units="secs")
+#print(glue("Training Complete!"))
+#print(glue("Time taken for training models: {diff} seconds."))
+#stopCluster(cl)
+#
+#saveRDS(models, 'xgboost_boost2_R_models.rds')
+models <- readRDS('xgboost_boost2_R_models.rds')
+
+#print(glue("Starting predictions on train data..."))
+#train_preds<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
+#  pred<-predict(models[[i]],newdata = as.matrix(train_x_all))
+#}
+#print(glue("Prediction complete!\n"))
 
 #saveRDS(train_preds, "train_preds.rds")
 train_preds <- readRDS("train_preds.rds")
@@ -157,9 +159,18 @@ cl<-makeCluster(44)
 registerDoParallel(cl)
 models_logistic<-foreach(i=1:length(predictors) , .packages=c("glue","dplyr","speedglm")) %dopar%{
   train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
-  speedglm(train_y_predictor~., data = data.frame(train_preds), family = binomial(), maxit = 50)
+  out <- tryCatch({
+    speedglm(train_y_predictor~., data = data.frame(train_preds, tSNE_train[train_not_ctl, ]), family = binomial(), maxit = 50)
+  },
+  error=function(cond) {
+    return(NA)
+  })
+  out
 }
 stopCluster(cl)
+
+saveRDS(models_logistic, 'models_logistic.rds')
+models_logistic <- loadRDS(models_logistic)
 
 print(glue("Starting predictions..."))
 preds_xgb<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
@@ -167,10 +178,18 @@ preds_xgb<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost"
 }
 print(glue("Prediction complete!\n"))
 
+saveRDS(preds_xgb, 'preds_xgb.rds')
+preds_xgb <- loadRDS(preds_xgb)
 
 print(glue("Starting predictions on test data..."))
-preds_logreg<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","speedglm")) %do% {
-  predict(models_logistic[[i]], newdata = list(`train_preds..i..` = preds_xgb), type= 'response')
+preds<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","speedglm")) %do% {
+  out <- tryCatch({
+    predict(models_logistic[[i]], newdata = list(`train_preds..i..`= data.frame(preds_xgb, tSNE)), type= 'response')
+  },
+  error=function(cond){
+    return(preds_xgb[[i]])
+  })
+  out
 }
 print(glue("Prediction complete!\n"))
 
@@ -201,16 +220,14 @@ loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost"
 
 #write_csv(new_preds,"preds_with_names.csv")
 
-
-
 print(glue("Logloss on test data: {mean(loglosses%>%unlist())}\n"))
 
-for(i in 1:length(predictors)){
-  pred = predict(models[[i]] , newdata = as.matrix(test_features_all))
-  pred[!test_features_not_ctl] = 0
-  sample_submission[[predictors[i]]] = pred
-}
-
-write_csv(sample_submission, 'logistics_submission.csv')
+#for(i in 1:length(predictors)){
+#  pred = predict(models[[i]] , newdata = as.matrix(test_features_all))
+#  pred[!test_features_not_ctl] = 0
+#  sample_submission[[predictors[i]]] = pred
+#}
+#
+#write_csv(sample_submission, 'logistics_submission.csv')
 
 print("End...")
