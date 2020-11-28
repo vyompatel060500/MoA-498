@@ -63,6 +63,17 @@ fix_names <- function(df) {
   df
 }
 
+
+############
+# setup
+
+
+
+
+
+
+
+
 # path_why <- "./project498/MoA-498/"
 # path_why <- "/home/patel/project498/MoA-498/"
 path_why <- "./"
@@ -72,6 +83,10 @@ train_scores <- read_csv(glue("{path_why}lish-moa/train_targets_scored.csv"))
 test_features_input <- read_csv(glue("{path_why}lish-moa/test_features.csv"))
 sample_submission<-read_csv(glue("{path_why}lish-moa/sample_submission.csv"))
 # tSNE<-read_csv(glue("{path_why}lish-moa/tsne4dims.csv"))
+
+
+# end setup
+#########
 
 set.seed(498)
 test = sample(1:nrow(train_features), nrow(train_features)/10)
@@ -257,6 +272,7 @@ param_grid <- expand.grid(
      # scale_pos_weight on tux5 only
      #scale_pos_weight=0.3,
      # lossguide on tux8 only.
+     grow_policy='depthwise',
      #grow_policy='lossguide', # lossguide: split at nodes with highest loss change; As opposed to: depthwise: split at nodes closest to the root.
      tree_method='hist' # faster!
      #tree_method='exact'
