@@ -192,12 +192,7 @@ if(drop_ctl){
 train_models <- function(nrounds, ...) {
     params = list(...)
 
-    #these_pars_name <- glue('loglosses_xgboostgridsearch_{paste0(names(params), params, "nrounds", nrounds, collapse="_")}')
-    #these_pars_name <- glue('xgbgs_nrounds{nrounds}_{paste0(names(params), params, collapse="_")}')
-    these_pars_name <- glue('xgbgs_nrounds_with_scale_pos_weight_{nrounds}_{paste0(names(params), params, collapse="_")}')
-
-    these_pars_rds <- glue('{these_pars_name}.rds')
-    these_pars_csv <- glue('{these_pars_name}.csv')
+    # these_pars_name <- glue('xgbgs_nrounds_with_scale_pos_weight_{nrounds}_{paste0(names(params), params, collapse="_")}')
 
     if(file.exists(these_pars_rds)) return(NA) # Short circuit if we already tried these params
 
@@ -231,7 +226,7 @@ train_models <- function(nrounds, ...) {
 
     print(glue("Starting predictions..."))
     preds<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
-      pred<-predict(models[[i]],newdata = as.matrix(test_x_all))
+      pred<-predict(models[[i]],newdata = as.matrix(test_x_all %>% dplyr::select(-sig_id)))
     }
     print(glue("Prediction complete!\n"))
 
@@ -242,7 +237,7 @@ train_models <- function(nrounds, ...) {
 
     print(glue("Starting logloss calculation..."))
     loglosses<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
-      test_y_predictor<-test_y %>% dplyr::select(-sig_id) %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
+      test_y_predictor<-test_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
       
       temp <- pmax(pmin(as.numeric(preds[[i]]), 1 - 1e-15), 1e-15)
       logloss(temp,test_y_predictor)
@@ -258,18 +253,18 @@ train_models <- function(nrounds, ...) {
     new_preds<-matrix(nrow = dim(test_x)[1], ncol = num_cols_to_use)
     dimnames(new_preds) = list(test_x_sig_id %>% unlist(), predictors)
     new_preds<-data.frame(new_preds)
-    for(i in 1:num_cols_to_use){
+    for(i in 1:num_cols_to_use) {
       new_preds[i] = preds[[i]]
     }
 
-    write_csv(new_preds, file.path(pred_csvs_dir, these_pars_csv))
-    saveRDS(loglosses, file.path(loglosses_dir, these_pars_rds))
 
     ll <- mean(unlist(loglosses))
     return_value=glue("Logloss on test data: {mean(unlist(loglosses))}; nrounds:{nrounds} params: {paste(names(params), params, collapse=',')}\n")
     print(return_value)
     #write(return_value, file="XGB_LOGLOSS_METADATA.txt", append=TRUE)
-    insert_result(res=loglosses, logloss=ll, ..., nrounds=nrounds, with_pca=with_pca, with_important_only=with_important_only, drop_ctl=drop_ctl)
+    robj_id <- insert_result(res=loglosses, logloss=ll, ..., nrounds=nrounds, with_pca=with_pca, with_important_only=with_important_only, drop_ctl=drop_ctl)
+    write_csv(new_preds, file.path(pred_csvs_dir, glue("{robj_id}.csv")))
+    saveRDS(loglosses, file.path(loglosses_dir, glue("{robj_id}.rds")))
     return_value
 }
 
