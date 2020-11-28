@@ -263,8 +263,8 @@ train_models <- function(nrounds, ...) {
     print(return_value)
     #write(return_value, file="XGB_LOGLOSS_METADATA.txt", append=TRUE)
     robj_id <- insert_result(res=loglosses, logloss=ll, ..., nrounds=nrounds, with_pca=with_pca, with_important_only=with_important_only, drop_ctl=drop_ctl)
-    write_csv(new_preds, file.path(pred_csvs_dir, glue("{robj_id}.csv")))
-    saveRDS(loglosses, file.path(loglosses_dir, glue("{robj_id}.rds")))
+    write_csv(new_preds, file.path(".GRID_SEARCH_RESULTS.db", glue("{robj_id}.csv")))
+    saveRDS(loglosses, file.path(".GRID_SEARCH_RESULTS.db", glue("{robj_id}.rds")))
     return_value
 }
 
