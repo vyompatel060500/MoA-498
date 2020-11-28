@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS JiangResults(
     ID INTEGER PRIMARY KEY, -- TODO: Does an index get created automatically?
-    logloss FLOAT,
+    testlogloss FLOAT,
+    trainlogloss FLOAT,
     eta INTEGER,
     nrounds INTEGER,
     num_parallel_tree INTEGER,
