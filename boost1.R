@@ -82,6 +82,7 @@ predictors = names(train_y)
 test_x_sig_id<-train_features[test,] %>% dplyr::select(sig_id)
 test_features_sig_id<-test_features_input %>% dplyr::select(sig_id)
 
+all_x <-train_features %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>%dplyr::select(-sig_id)
 train_x<-train_features[train,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>%dplyr::select(-sig_id)
 test_x<-train_features[test,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>% dplyr::select(-sig_id)
 test_features<-test_features_input %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>% dplyr::select(-sig_id)
@@ -91,15 +92,19 @@ test_y<-train_scores[test,]%>% dplyr::select(-sig_id)
 
 
 #One-Hot encoding
+all_x_onehot<-convert_onehot(all_x)
 train_x_onehot<-convert_onehot(train_x)
 test_x_onehot<-convert_onehot(test_x)
 test_features_onehot<-convert_onehot(test_features)
 
+all_not_ctl = all_x_onehot$type_ctl != 1
 train_not_ctl = train_x_onehot$type_ctl != 1
 test_not_ctl = test_x_onehot$type_ctl != 1
 test_features_not_ctl = test_features_onehot$type_ctl != 1
 
 
+all_x_g<-all_x%>%dplyr::select(starts_with('g-'))
+all_x_c<-all_x%>%dplyr::select(starts_with('c-'))
 train_x_g<-train_x%>%dplyr::select(starts_with('g-'))
 train_x_c<-train_x%>%dplyr::select(starts_with('c-'))
 test_x_g<-test_x%>%dplyr::select(starts_with('g-'))
@@ -109,6 +114,8 @@ test_feat_c<-test_features%>%dplyr::select(starts_with('c-'))
 
 
 print(glue("Starting PCA..."))
+all_pca_g = preProcess(all_x_g, method = 'pca', thresh = 0.80)
+all_pca_c = preProcess(all_x_c, method = 'pca', thresh = 0.80)
 pca_g = preProcess(train_x_g, method = 'pca', thresh = 0.80)
 pca_c = preProcess(train_x_c, method = 'pca', thresh = 0.80)
 train_x_g<-predict(pca_g, train_x_g)
@@ -119,10 +126,12 @@ test_feat_g<-predict(pca_g, test_feat_g)
 test_feat_c<-predict(pca_c, test_feat_c)
 print(glue("Completed PCA!"))
 
+names(all_x_g)<-glue("PCg-{c(1:length(all_x_g))}")
 names(train_x_g)<-glue("PCg-{c(1:length(train_x_g))}")
 names(test_x_g)<-glue("PCg-{c(1:length(test_x_g))}")
 names(test_feat_g)<-glue("PCg-{c(1:length(test_feat_g))}")
 
+all_x_all<-(cbind(all_x_onehot, all_x_g, all_x_c) %>% as_tibble())[all_not_ctl,-c(1,2)]
 train_x_all<-(cbind(train_x_onehot, train_x_g, train_x_c) %>% as_tibble())[train_not_ctl,-c(1,2)]
 test_x_all<-(cbind(test_x_onehot, test_x_g, test_x_c) %>% as_tibble())[,-c(1,2)]
 test_features_all<-(cbind(test_features_onehot, test_feat_g, test_feat_c) %>% as_tibble())[,-c(1,2)]
@@ -178,6 +187,13 @@ train_models <- function(nrounds, params) {
       logloss(temp,test_y_predictor)
     }
 
+    # new_preds<-matrix(nrow = dim(test_x)[1], ncol = length(predictors))
+    # dimnames(new_preds) = list(test_x_sig_id %>% unlist(), predictors)
+    # new_preds<-data.frame(new_preds)
+    # for(i in 1:length(predictors)){
+    #   new_preds[i] = preds[[i]]
+    # }
+
     new_preds<-matrix(nrow = dim(test_x)[1], ncol = length(predictors))
     dimnames(new_preds) = list(test_x_sig_id %>% unlist(), predictors)
     new_preds<-data.frame(new_preds)
@@ -203,21 +219,22 @@ if(nodename=="tux5") {
   num_parallel_tree = 10
 }
 if(nodename=="tux6") {
-  eta = 0.05
+  eta = c(0.01, 0.03, 0.05)
   nrounds = 200
   num_parallel_tree = 10
 }
 if(nodename=="tux7") {
-  eta = 0.1
-  nrounds = 20
+  eta = 0.05
+  nrounds = 200
   num_parallel_tree = 100
 }
 if(nodename=="tux8") {
   # NOTE: HAD to change naming convention for this one.
   # NOTE: Also set grow_policy=lossguide for this one.
-  eta = 0.2
-  nrounds = 10
-  num_parallel_tree = 1000
+  # eta = 0.2; nrounds = 10; num_parallel = 1000 ==> garbage; 0.07....
+  eta = 0.05
+  nrounds = 200
+  num_parallel_tree = 10
 }
 
 # Maximum delta step we allow each leaf output to be. If the value is set to 0, it means there is no constraint. If it is set to a positive value, it can help making the update step more conservative. Usually this parameter is not needed, but it might help in logistic regression when class is extremely imbalanced. Set it to value of 1-10 might help control the update.
@@ -225,7 +242,7 @@ if(nodename=="tux8") {
 param_grid <- expand.grid(
    list(
      eta=eta,
-     max_delta_step=c(5),
+     max_delta_step=c(3),
      #colsample_bynode=c(0.7, 0.3),
      colsample_bynode=0.3, # 0.3 seems to do better
      max_depth=c(2,3),
@@ -240,31 +257,31 @@ param_grid <- expand.grid(
      # scale_pos_weight on tux5 only
      #scale_pos_weight=0.3,
      # lossguide on tux8 only.
-     grow_policy='lossguide', # lossguide: split at nodes with highest loss change; As opposed to: depthwise: split at nodes closest to the root.
+     #grow_policy='lossguide', # lossguide: split at nodes with highest loss change; As opposed to: depthwise: split at nodes closest to the root.
      tree_method='hist' # faster!
      #tree_method='exact'
    ),
    stringsAsFactors=FALSE
 )
 
-if(nodename=="tux7") {
-  # Short circuit and do logistic regression.
-  # nrounds = 20 lead to 0.19... almost there
-  # nrounds = 200 lead to 0.28.... Not good
-  # nrounds = 200 lead to 0.18 with lambda = 1; NOT BAD!
-  nrounds = 100
-  param_grid <- expand.grid(
-     list(
-       lambda=c(0.5, 1),
-       alpha=0,
-       colsample_bynode=c(0.3, 0.7),
-       booster='gblinear',   
-       objective='binary:logistic',
-       subsample=c(0.4, 0.7) # almost like cross val
-     ),
-     stringsAsFactors=FALSE
-  )
-}
+#if(nodename=="tux7") {
+#  # Short circuit and do logistic regression.
+#  # nrounds = 20 lead to 0.19... almost there
+#  # nrounds = 200 lead to 0.28.... Not good
+#  # nrounds = 200 lead to 0.18 with lambda = 1; NOT BAD!
+#  nrounds = 100
+#  param_grid <- expand.grid(
+#     list(
+#       lambda=c(0.5, 1),
+#       alpha=0,
+#       colsample_bynode=c(0.3, 0.7),
+#       booster='gblinear',   
+#       objective='binary:logistic',
+#       subsample=c(0.4, 0.7) # almost like cross val
+#     ),
+#     stringsAsFactors=FALSE
+#  )
+#}
 
 results <- purrr::pmap_dfr(param_grid, function(...) {
     train_models(nrounds, list(...))
