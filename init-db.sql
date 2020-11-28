@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS JiangResults(
     alpha FLOAT,
     lambda FLOAT,
     objective TEXT,
+    with_pca INTEGER, -- bool
+    with_important_only INTEGER, --bool
+    drop_ctl INTEGER, -- bool
     DirectoryPath TEXT NOT NULL -- Directory path where all objects are stored.
 );
 

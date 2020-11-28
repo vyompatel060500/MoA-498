@@ -85,55 +85,52 @@ test_features_input <- read_csv(glue("{path_why}lish-moa/test_features.csv"))
 sample_submission<-read_csv(glue("{path_why}lish-moa/sample_submission.csv"))
 # tSNE<-read_csv(glue("{path_why}lish-moa/tsne4dims.csv"))
 
-preprocess_dataset <- function(X, Y){
-  test = sample(1:nrow(train_features), nrow(train_features)/10)
-  train = -test
-  train_y<-train_scores[train,] %>% dplyr::select(-sig_id)
-  predictors = names(train_y)
+drop_ctl <- FALSE
+with_pca <- TRUE
+with_important_only <- FALSE
 
-  all_x <- X %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time))
-  test_y<- Y [test,]
-
-  #One-Hot encoding
-  all_x_onehot<-convert_onehot(all_x)
-
-  all_not_ctl = all_x_onehot$type_ctl != 1
-
-
-  all_x_g<-all_x%>%dplyr::select(starts_with('g-'))
-  all_x_c<-all_x%>%dplyr::select(starts_with('c-'))
-
-  print(glue("Starting PCA..."))
-  all_pca_g = preProcess(all_x_g, method = 'pca', thresh = 0.80)
-  all_pca_c = preProcess(all_x_c, method = 'pca', thresh = 0.80)
-  print(glue("Completed PCA!"))
-
-  names(all_x_g)<-glue("PCg-{c(1:length(all_x_g))}")
-
-  all_x_all<-(cbind(all_x_onehot, all_x_g, all_x_c) %>% as_tibble())[all_not_ctl,-c(1,2)]
-  all_x_all
-}
-
+#preprocess_dataset <- function(X){
+#  all_x <- X %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time))
+#  #One-Hot encoding
+#  all_x_onehot<-convert_onehot(all_x)
+#  all_not_ctl = all_x_onehot$type_ctl != 1
+#  all_x_g<-all_x%>%dplyr::select(starts_with('g-'))
+#  all_x_c<-all_x%>%dplyr::select(starts_with('c-'))
+#  print(glue("Starting PCA..."))
+#  all_pca_g = preProcess(all_x_g, method = 'pca', thresh = 0.80)
+#  all_pca_c = preProcess(all_x_c, method = 'pca', thresh = 0.80)
+#  print(glue("Completed PCA!"))
+#  names(all_x_g)<-glue("PCg-{c(1:length(all_x_g))}")
+#  if(drop_ctl) {
+#    all_x_all<-(cbind(all_x_onehot, all_x_g, all_x_c) %>% as_tibble())[all_not_ctl,-c(2)]
+#  } else {
+#    all_x_all<-(cbind(all_x_onehot, all_x_g, all_x_c) %>% as_tibble())[ ,-c(2)]
+#  }
+#  all_x_all
+#}
 
 # end setup
 #########
 
+
 #set.seed(498)
 test = sample(1:nrow(train_features), nrow(train_features)/10)
 train = -test
-train_y<-train_scores[train,] %>% dplyr::select(-sig_id)
-predictors = names(train_y)
+train_y <- train_scores[train,]
+test_y  <- train_scores[test, ]
+predictors = names(train_y %>% dplyr::select(-sig_id))
 
-test_x_sig_id<-train_features[test,] %>% dplyr::select(sig_id)
-test_features_sig_id<-test_features_input %>% dplyr::select(sig_id)
-
-all_x <-train_features %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>%dplyr::select(-sig_id)
-train_x<-train_features[train,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>%dplyr::select(-sig_id)
-test_x<-train_features[test,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>% dplyr::select(-sig_id)
-test_features<-test_features_input %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>% dplyr::select(-sig_id)
+all_x <-rbind(train_features, test_features) %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time))
+train_x<-train_features[train,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time))
+test_x<-train_features[test,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time))
+test_features<-test_features_input %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time))
 #tSNE_train<-tSNE[train,]
 #tSNE_test<-tSNE[test,]
 
+all_x_sig_id <- tibble(sig_id=all_x$sig_id)
+train_x_sig_id <- tibble(sig_id=train_x$sig_id)
+test_x_sig_id <- tibble(sig_id=test_x$sig_id)
+test_features_sig_id <- tibble(sig_id=test_features$sig_id)
 
 #One-Hot encoding
 all_x_onehot<-convert_onehot(all_x)
@@ -146,39 +143,51 @@ train_not_ctl = train_x_onehot$type_ctl != 1
 test_not_ctl = test_x_onehot$type_ctl != 1
 test_features_not_ctl = test_features_onehot$type_ctl != 1
 
+all_x_g<-all_x%>%dplyr::select(starts_with('g-') )
+all_x_c<-all_x%>%dplyr::select(starts_with('c-') )
+train_x_g<-train_x%>%dplyr::select(starts_with('g-') )
+train_x_c<-train_x%>%dplyr::select(starts_with('c-') )
+test_x_g<-test_x%>%dplyr::select(starts_with('g-') )
+test_x_c<-test_x%>%dplyr::select(starts_with('c-') )
+test_feat_g<-test_features%>%dplyr::select(starts_with('g-') )
+test_feat_c<-test_features%>%dplyr::select(starts_with('c-') )
 
-all_x_g<-all_x%>%dplyr::select(starts_with('g-'))
-all_x_c<-all_x%>%dplyr::select(starts_with('c-'))
-train_x_g<-train_x%>%dplyr::select(starts_with('g-'))
-train_x_c<-train_x%>%dplyr::select(starts_with('c-'))
-test_x_g<-test_x%>%dplyr::select(starts_with('g-'))
-test_x_c<-test_x%>%dplyr::select(starts_with('c-'))
-test_feat_g<-test_features%>%dplyr::select(starts_with('g-'))
-test_feat_c<-test_features%>%dplyr::select(starts_with('c-'))
+if(with_pca) {
+  print(glue("Starting PCA..."))
+  pca_g = preProcess(all_x_g, method = 'pca', thresh = 0.80)
+  pca_c = preProcess(all_x_c, method = 'pca', thresh = 0.90) # thresh 0f 0.80 lead to only 2 PCs
+  all_x_g<-predict(pca_g, all_x_g)
+  all_x_c<-predict(pca_c, all_x_c)
+  train_x_g<-predict(pca_g, train_x_g)
+  train_x_c<-predict(pca_c, train_x_c)
+  test_x_g<-predict(pca_g, test_x_g)
+  test_x_c<-predict(pca_c, test_x_c)
+  test_feat_g<-predict(pca_g, test_feat_g)
+  test_feat_c<-predict(pca_c, test_feat_c)
+
+  names(all_x_g)<-glue("PCg-{c(1:length(all_x_g))}")
+  names(train_x_g)<-glue("PCg-{c(1:length(train_x_g))}")
+  names(test_x_g)<-glue("PCg-{c(1:length(test_x_g))}")
+  names(test_feat_g)<-glue("PCg-{c(1:length(test_feat_g))}")
+
+  print(glue("Completed PCA!"))
+} else if(with_important_only) {
+  if(with_pca) stop("ERROR: Can't have both with_pca and with_important_only")
+  # TODO: Apply important feature only filtering.
+}
 
 
-print(glue("Starting PCA..."))
-all_pca_g = preProcess(all_x_g, method = 'pca', thresh = 0.80)
-all_pca_c = preProcess(all_x_c, method = 'pca', thresh = 0.80)
-pca_g = preProcess(train_x_g, method = 'pca', thresh = 0.80)
-pca_c = preProcess(train_x_c, method = 'pca', thresh = 0.80)
-train_x_g<-predict(pca_g, train_x_g)
-train_x_c<-predict(pca_c, train_x_c)
-test_x_g<-predict(pca_g, test_x_g)
-test_x_c<-predict(pca_c, test_x_c)
-test_feat_g<-predict(pca_g, test_feat_g)
-test_feat_c<-predict(pca_c, test_feat_c)
-print(glue("Completed PCA!"))
-
-names(all_x_g)<-glue("PCg-{c(1:length(all_x_g))}")
-names(train_x_g)<-glue("PCg-{c(1:length(train_x_g))}")
-names(test_x_g)<-glue("PCg-{c(1:length(test_x_g))}")
-names(test_feat_g)<-glue("PCg-{c(1:length(test_feat_g))}")
-
-all_x_all<-(cbind(all_x_onehot, all_x_g, all_x_c) %>% as_tibble())[all_not_ctl,-c(1,2)]
-train_x_all<-(cbind(train_x_onehot, train_x_g, train_x_c) %>% as_tibble())[train_not_ctl,-c(1,2)]
-test_x_all<-(cbind(test_x_onehot, test_x_g, test_x_c) %>% as_tibble())[,-c(1,2)]
-test_features_all<-(cbind(test_features_onehot, test_feat_g, test_feat_c) %>% as_tibble())[,-c(1,2)]
+if(drop_ctl){
+  all_x_all<-(cbind(all_x_sig_id, all_x_onehot, all_x_g, all_x_c) %>% as_tibble())[all_not_ctl,-c(3)]
+  train_x_all<-(cbind(train_x_sig_id, train_x_onehot, train_x_g, train_x_c) %>% as_tibble())[train_not_ctl,-c(3)]
+  test_x_all<-(cbind(test_x_sig_id, test_x_onehot, test_x_g, test_x_c) %>% as_tibble())[test_not_ctl,-c(3)]
+  test_features_all<-(cbind(test_features_sig_id, test_features_onehot, test_feat_g, test_feat_c) %>% as_tibble())[test_features_not_ctl,-c(3)]
+} else {
+  all_x_all<-(cbind(all_x_sig_id, all_x_onehot, all_x_g, all_x_c) %>% as_tibble())[ ,-c(3)]
+  train_x_all<-(cbind(train_x_sig_id, train_x_onehot, train_x_g, train_x_c) %>% as_tibble())[ ,-c(3)]
+  test_x_all<-(cbind(test_x_sig_id, test_x_onehot, test_x_g, test_x_c) %>% as_tibble())[,-c(3)]
+  test_features_all<-(cbind(test_features_sig_id, test_features_onehot, test_feat_g, test_feat_c) %>% as_tibble())[,-c(3)]
+}
 
 train_models <- function(nrounds, ...) {
     params = list(...)
@@ -201,8 +210,12 @@ train_models <- function(nrounds, ...) {
     #num_cols_to_use <- 2
 
     models<-foreach(i=1:num_cols_to_use, .packages=c("glue","dplyr","xgboost"), .export=ls(globalenv())) %dopar% {
-      train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
-      datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
+      if(drop_ctl){
+	train_y_predictor <- train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
+      } else {
+	train_y_predictor <- train_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
+      }
+      datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all %>% dplyr::select(-sig_id)), label = train_y_predictor)
       #p = list(colsample_bynode=0.8, learning_rate=1, max_depth=5, num_parallel_tree=100, objective='binary:logistic', subsample=0.8, tree_method='gpu_hist')
       ### pos_scaling was bad!
       ## tux5: tune scale_pos_wegiht on a per model basis
@@ -229,7 +242,7 @@ train_models <- function(nrounds, ...) {
 
     print(glue("Starting logloss calculation..."))
     loglosses<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
-      test_y_predictor<-test_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
+      test_y_predictor<-test_y %>% dplyr::select(-sig_id) %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
       
       temp <- pmax(pmin(as.numeric(preds[[i]]), 1 - 1e-15), 1e-15)
       logloss(temp,test_y_predictor)
@@ -256,7 +269,7 @@ train_models <- function(nrounds, ...) {
     return_value=glue("Logloss on test data: {mean(unlist(loglosses))}; nrounds:{nrounds} params: {paste(names(params), params, collapse=',')}\n")
     print(return_value)
     #write(return_value, file="XGB_LOGLOSS_METADATA.txt", append=TRUE)
-    insert_result(res=loglosses, logloss=ll, ..., nrounds=nrounds)
+    insert_result(res=loglosses, logloss=ll, ..., nrounds=nrounds, with_pca=with_pca, with_important_only=with_important_only, drop_ctl=drop_ctl)
     return_value
 }
 
