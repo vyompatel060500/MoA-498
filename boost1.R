@@ -67,12 +67,13 @@ fix_names <- function(df) {
 ############
 # setup
 
+pred_csvs_dir <- "grid_search_pred_csvs"
+dir.create(file.path(getwd(), pred_csvs_dir))
+loglosses_dir <- "grid_search_logloss_rds_files"
+dir.create(file.path(getwd(), loglosses_dir))
 
-
-
-
-
-
+source('UTIL-db.R')
+init_db()
 
 # path_why <- "./project498/MoA-498/"
 # path_why <- "/home/patel/project498/MoA-498/"
@@ -84,11 +85,40 @@ test_features_input <- read_csv(glue("{path_why}lish-moa/test_features.csv"))
 sample_submission<-read_csv(glue("{path_why}lish-moa/sample_submission.csv"))
 # tSNE<-read_csv(glue("{path_why}lish-moa/tsne4dims.csv"))
 
+preprocess_dataset <- function(X, Y){
+  test = sample(1:nrow(train_features), nrow(train_features)/10)
+  train = -test
+  train_y<-train_scores[train,] %>% dplyr::select(-sig_id)
+  predictors = names(train_y)
+
+  all_x <- X %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time))
+  test_y<- Y [test,]
+
+  #One-Hot encoding
+  all_x_onehot<-convert_onehot(all_x)
+
+  all_not_ctl = all_x_onehot$type_ctl != 1
+
+
+  all_x_g<-all_x%>%dplyr::select(starts_with('g-'))
+  all_x_c<-all_x%>%dplyr::select(starts_with('c-'))
+
+  print(glue("Starting PCA..."))
+  all_pca_g = preProcess(all_x_g, method = 'pca', thresh = 0.80)
+  all_pca_c = preProcess(all_x_c, method = 'pca', thresh = 0.80)
+  print(glue("Completed PCA!"))
+
+  names(all_x_g)<-glue("PCg-{c(1:length(all_x_g))}")
+
+  all_x_all<-(cbind(all_x_onehot, all_x_g, all_x_c) %>% as_tibble())[all_not_ctl,-c(1,2)]
+  all_x_all
+}
+
 
 # end setup
 #########
 
-set.seed(498)
+#set.seed(498)
 test = sample(1:nrow(train_features), nrow(train_features)/10)
 train = -test
 train_y<-train_scores[train,] %>% dplyr::select(-sig_id)
@@ -103,7 +133,6 @@ test_x<-train_features[test,] %>% dplyr::mutate(cp_type = factor(cp_type), cp_do
 test_features<-test_features_input %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time)) %>% dplyr::select(-sig_id)
 #tSNE_train<-tSNE[train,]
 #tSNE_test<-tSNE[test,]
-test_y<-train_scores[test,]%>% dplyr::select(-sig_id)
 
 
 #One-Hot encoding
@@ -151,7 +180,8 @@ train_x_all<-(cbind(train_x_onehot, train_x_g, train_x_c) %>% as_tibble())[train
 test_x_all<-(cbind(test_x_onehot, test_x_g, test_x_c) %>% as_tibble())[,-c(1,2)]
 test_features_all<-(cbind(test_features_onehot, test_feat_g, test_feat_c) %>% as_tibble())[,-c(1,2)]
 
-train_models <- function(nrounds, params) {
+train_models <- function(nrounds, ...) {
+    params = list(...)
 
     #these_pars_name <- glue('loglosses_xgboostgridsearch_{paste0(names(params), params, "nrounds", nrounds, collapse="_")}')
     #these_pars_name <- glue('xgbgs_nrounds{nrounds}_{paste0(names(params), params, collapse="_")}')
@@ -162,12 +192,15 @@ train_models <- function(nrounds, params) {
 
     if(file.exists(these_pars_rds)) return(NA) # Short circuit if we already tried these params
 
-    cl<-makeCluster(22)
+    cl<-makeCluster(1)
     registerDoParallel(cl)
     start_time<-Sys.time()
     print(glue("Started training models..."))
 
-    models<-foreach(i=1:length(predictors), .packages=c("glue","dplyr","xgboost"), .export=ls(globalenv())) %dopar% {
+    num_cols_to_use <- length(predictors)
+    #num_cols_to_use <- 2
+
+    models<-foreach(i=1:num_cols_to_use, .packages=c("glue","dplyr","xgboost"), .export=ls(globalenv())) %dopar% {
       train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
       datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
       #p = list(colsample_bynode=0.8, learning_rate=1, max_depth=5, num_parallel_tree=100, objective='binary:logistic', subsample=0.8, tree_method='gpu_hist')
@@ -184,7 +217,7 @@ train_models <- function(nrounds, params) {
     stopCluster(cl)
 
     print(glue("Starting predictions..."))
-    preds<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
+    preds<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
       pred<-predict(models[[i]],newdata = as.matrix(test_x_all))
     }
     print(glue("Prediction complete!\n"))
@@ -195,7 +228,7 @@ train_models <- function(nrounds, params) {
     }
 
     print(glue("Starting logloss calculation..."))
-    loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
+    loglosses<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
       test_y_predictor<-test_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
       
       temp <- pmax(pmin(as.numeric(preds[[i]]), 1 - 1e-15), 1e-15)
@@ -209,19 +242,21 @@ train_models <- function(nrounds, params) {
     #   new_preds[i] = preds[[i]]
     # }
 
-    new_preds<-matrix(nrow = dim(test_x)[1], ncol = length(predictors))
+    new_preds<-matrix(nrow = dim(test_x)[1], ncol = num_cols_to_use)
     dimnames(new_preds) = list(test_x_sig_id %>% unlist(), predictors)
     new_preds<-data.frame(new_preds)
-    for(i in 1:length(predictors)){
+    for(i in 1:num_cols_to_use){
       new_preds[i] = preds[[i]]
     }
 
-    write_csv(new_preds, these_pars_csv)
-    saveRDS(loglosses, these_pars_rds)
+    write_csv(new_preds, file.path(pred_csvs_dir, these_pars_csv))
+    saveRDS(loglosses, file.path(loglosses_dir, these_pars_rds))
 
+    ll <- mean(unlist(loglosses))
     return_value=glue("Logloss on test data: {mean(unlist(loglosses))}; nrounds:{nrounds} params: {paste(names(params), params, collapse=',')}\n")
     print(return_value)
-    write(return_value, file="XGB_LOGLOSS_METADATA.txt", append=TRUE)
+    #write(return_value, file="XGB_LOGLOSS_METADATA.txt", append=TRUE)
+    insert_result(res=loglosses, logloss=ll, ..., nrounds=nrounds)
     return_value
 }
 
@@ -232,25 +267,28 @@ if(nodename=="tux5") {
   # nrounds = 2000 # lead to ll of about 0.19...; Not good enough
   nrounds = 300
   num_parallel_tree = 10
-}
-if(nodename=="tux6") {
+} else if(nodename=="tux6") {
   eta = c(0.01, 0.03, 0.05)
   nrounds = 200
   num_parallel_tree = 10
-}
-if(nodename=="tux7") {
+} else if(nodename=="tux7") {
   eta = 0.05
   nrounds = 200
   num_parallel_tree = 100
-}
-if(nodename=="tux8") {
+} else if(nodename=="tux8") {
   # NOTE: HAD to change naming convention for this one.
   # NOTE: Also set grow_policy=lossguide for this one.
   # eta = 0.2; nrounds = 10; num_parallel = 1000 ==> garbage; 0.07....
   eta = 0.05
   nrounds = 200
   num_parallel_tree = 10
+} else {
+  # testing on local
+  eta = 0.05
+  nrounds = 2
+  num_parallel_tree = 1
 }
+
 
 # Maximum delta step we allow each leaf output to be. If the value is set to 0, it means there is no constraint. If it is set to a positive value, it can help making the update step more conservative. Usually this parameter is not needed, but it might help in logistic regression when class is extremely imbalanced. Set it to value of 1-10 might help control the update.
 
@@ -274,6 +312,7 @@ param_grid <- expand.grid(
      # lossguide on tux8 only.
      grow_policy='depthwise',
      #grow_policy='lossguide', # lossguide: split at nodes with highest loss change; As opposed to: depthwise: split at nodes closest to the root.
+     booster='gbtree',
      tree_method='hist' # faster!
      #tree_method='exact'
    ),
@@ -299,8 +338,8 @@ param_grid <- expand.grid(
 #  )
 #}
 
-results <- purrr::pmap_dfr(param_grid, function(...) {
-    train_models(nrounds, list(...))
+results <- purrr::pmap(param_grid, function(...) {
+    train_models(nrounds, ...)
 })
 
 #for(i in 1:length(predictors)){

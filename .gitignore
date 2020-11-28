@@ -7,8 +7,9 @@ lish-moa
 .Rproj.user
 
 __pycache__/
- M boost1.R
- M boost2.R
 
 # 2+ GB file here...
 models_logistic.rds
+
+#.GRID_SEARCH_RESULTS.db/
+#GRID_SEARCH_RESULTS.db
