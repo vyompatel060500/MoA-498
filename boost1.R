@@ -257,6 +257,7 @@ param_grid <- expand.grid(
      # scale_pos_weight on tux5 only
      #scale_pos_weight=0.3,
      # lossguide on tux8 only.
+     grow_policy='depthwise',
      #grow_policy='lossguide', # lossguide: split at nodes with highest loss change; As opposed to: depthwise: split at nodes closest to the root.
      tree_method='hist' # faster!
      #tree_method='exact'

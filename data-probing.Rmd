@@ -1,0 +1,73 @@
+
+
+
+
+
+
+```{r}
+library(tidyverse)
+library(readr)
+library(ggplot2)
+library(ggcorrplot)
+library(purrr)
+```
+
+```{r, echo=FALSE, include=FALSE}
+train_features <- read_csv('lish-moa/train_features.csv')
+train_targets_scored <- read_csv('lish-moa/train_targets_scored.csv')
+# train_targets_nonscored <- read_csv('lish-moa/train_targets_nonscored.csv')
+```
+
+```{r}
+fs <- train_features
+ts <- train_targets_scored
+alldata <- left_join(by='sig_id', fs, ts)
+hist(rowSums(ts %>% select(-sig_id)))
+cs <- colSums(ts %>% select(-sig_id))
+hist(cs, breaks = seq(1, max(cs)+10, by = 10))
+hist(cs %% 3)
+```
+Determine how many combinations of classes there are in the target dataset, and if the distributions of time/dose are approximately even
+```{r}
+notctl <- train_features %>% 
+  select(sig_id, cp_type)  %>% 
+  filter(cp_type!='ctl_vehicle') %>%
+  left_join(by='sig_id', ts) %>%
+  select(-sig_id, -cp_type) %>%
+  rowSums
+  
+hist(notctl)
+sum(notctl==0)
+```
+Split into 6 datasets based on combinations of (cp_time, cp_dose) pairs, see if each is somewhat the same size
+```{r}
+combs <- expand.grid(
+  cp_time=c(24,48,72),
+  cp_dose=c('D1', 'D2'),
+  stringsAsFactors = FALSE
+)
+
+pmap(combs, function(cp_time, cp_dose) {
+  c(cp_time, cp_dose, nrow(fs %>% filter(cp_time==!!cp_time & cp_dose==!!cp_dose)))
+})
+
+```
+
+
+
+Try simple logistic regression. Try for a single resonse class.
+```{r}
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
