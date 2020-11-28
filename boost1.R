@@ -127,9 +127,15 @@ train_x_all<-(cbind(train_x_onehot, train_x_g, train_x_c) %>% as_tibble())[train
 test_x_all<-(cbind(test_x_onehot, test_x_g, test_x_c) %>% as_tibble())[,-c(1,2)]
 test_features_all<-(cbind(test_features_onehot, test_feat_g, test_feat_c) %>% as_tibble())[,-c(1,2)]
 
-train_models <- function(params) {
+train_models <- function(nrounds, params) {
 
-    cl<-makeCluster(44)
+    these_pars_name <- glue('loglosses_xgboostgridsearch_{paste0(names(params), params, "nrounds", nrounds, collapse="_")}')
+    these_pars_rds <- glue('{these_pars_name}.rds')
+    these_pars_csv <- glue('{these_pars_name}.csv')
+
+    if(file.exists(these_pars_rds)) return(NA) # Short circuit if we already tried these params
+
+    cl<-makeCluster(22)
     registerDoParallel(cl)
     start_time<-Sys.time()
     print(glue("Started training models..."))
@@ -138,7 +144,7 @@ train_models <- function(params) {
       train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
       datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
       #p = list(colsample_bynode=0.8, learning_rate=1, max_depth=5, num_parallel_tree=100, objective='binary:logistic', subsample=0.8, tree_method='gpu_hist')
-      xgboost(data = datamatrix, nrounds=80, params = params)
+      xgboost(data = datamatrix, nrounds=nrounds, params = params, nthread=2)
     }
     end_time<-Sys.time()
     diff=difftime(end_time,start_time,units="secs")
@@ -165,40 +171,59 @@ train_models <- function(params) {
       logloss(temp,test_y_predictor)
     }
 
-    #new_preds<-matrix(nrow = dim(test_x)[1], ncol = length(predictors))
-    #dimnames(new_preds) = list(test_x_sig_id %>% unlist(), predictors)
-    #new_preds<-data.frame(new_preds)
-    #for(i in 1:length(predictors)){
-    #  new_preds[i] = preds[[i]]
-    #}
+    new_preds<-matrix(nrow = dim(test_x)[1], ncol = length(predictors))
+    dimnames(new_preds) = list(test_x_sig_id %>% unlist(), predictors)
+    new_preds<-data.frame(new_preds)
+    for(i in 1:length(predictors)){
+      new_preds[i] = preds[[i]]
+    }
 
-    #write_csv(new_preds,"preds_with_names.csv")
-    saveRDS(loglosses, glue('loglosses_xgboostgridsearch_{paste0(names(params), params, collapse="_")}.rds'))
+    write_csv(new_preds, these_pars_csv)
+    saveRDS(loglosses, these_pars_rds)
 
     return_value=glue("Logloss on test data: {mean(unlist(loglosses))}; params: {paste(names(params), params, collapse=',')}\n")
     print(return_value)
+    write(return_value, file="XGB_LOGLOSS_METADATA.txt", append=TRUE)
     return_value
 }
 
+nodename <- Sys.info()['nodename']
+if(nodename=="tux6") {
+  eta = 0.05
+  nrounds = 200
+}
+if(nodename=="tux7") {
+  eta = 0.1
+  nrounds = 150
+}
+if(nodename=="tux8") {
+  eta = 0.2
+  nrounds = 100
+}
+
+# Maximum delta step we allow each leaf output to be. If the value is set to 0, it means there is no constraint. If it is set to a positive value, it can help making the update step more conservative. Usually this parameter is not needed, but it might help in logistic regression when class is extremely imbalanced. Set it to value of 1-10 might help control the update.
+
 param_grid <- expand.grid(
    list(
-     eta=c(0.05,0.15,0.3),
-     colsample_bynode=c(1.0, 0.7),
-     max_depth=c(2,3),
+     eta=eta,
+     max_delta_step=c(0, 2, 10),
+     colsample_bynode=c(1.0, 0.7, 0.3),
+     max_depth=c(1,2), # depth 1 == stumps; Gives an additive model with no interactions modeled
+     #max_depth=c(3,6), # default is 6; 6 was bad
      num_parallel_tree=c(1, 1000),
      objective='binary:logistic',
-     subsample=c(1.0, 0.7),
-     tree_method='exact'
+     #subsample=c(1.0, 0.7),
+     subsample=0.7, # almost like cross val
+     #sampling_method='gradient_based', # Might be good for imbalanced dataset?? ONLY SUPPORTED for 'gpu_hist'; Set subsample as low as 0.1 here; (subsample >= 0.5 for uniform sampling)
+     tree_method='hist' # faster!
+     #tree_method='exact'
    ),
    stringsAsFactors=FALSE
 )
 
 results <- purrr::pmap_dfr(param_grid, function(...) {
-    train_models(list(...))
+    train_models(nrounds, list(...))
 })
-
-saveRDS(results, "LOGLOSS_GRID_SEARCH_FINAL_RESULTS.rds")
-
 
 #for(i in 1:length(predictors)){
 #  pred = predict(models[[i]] , newdata = as.matrix(test_features_all))

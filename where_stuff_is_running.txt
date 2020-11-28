@@ -1,0 +1,10 @@
+
+
+
+logistic second model step: tux6; In  a tmux
+
+xgboost grid search: tux5; Will be on this, will be in a tmux.
+
+
+TODO: Distribute the xgboost grid searching stuff; Set a different eta or something on each node. ??
+TODO: Write the results of grid earch to a metadata file.

@@ -1,0 +1,10 @@
+Logloss on test data: 0.0225920133435912; params: eta 0.05,colsample_bynode 1,max_depth 2,num_parallel_tree 1,objective binary:logistic,subsample 1,tree_method exact
+Logloss on test data: 0.0279693741964705; params: eta 0.5,max_delta_step 0,colsample_bynode 1,max_depth 3,num_parallel_tree 1,objective binary:logistic,subsample 0.7,tree_method hist
+Logloss on test data: 0.0167718407482533; params: eta 0.05,max_delta_step 0,colsample_bynode 1,max_depth 3,num_parallel_tree 1,objective binary:logistic,subsample 0.7,tree_method hist
+Logloss on test data: 0.0167719112326405; params: eta 0.05,max_delta_step 2,colsample_bynode 1,max_depth 3,num_parallel_tree 1,objective binary:logistic,subsample 0.7,tree_method hist
+Logloss on test data: 0.0167681692940806; params: eta 0.05,max_delta_step 0,colsample_bynode 0.7,max_depth 3,num_parallel_tree 1,objective binary:logistic,subsample 0.7,tree_method hist
+Logloss on test data: 0.0167138213162697; params: eta 0.05,max_delta_step 2,colsample_bynode 0.7,max_depth 3,num_parallel_tree 1,objective binary:logistic,subsample 0.7,tree_method hist
+Logloss on test data: 0.0178500005300326; params: eta 0.05,max_delta_step 0,colsample_bynode 1,max_depth 6,num_parallel_tree 1,objective binary:logistic,subsample 0.7,tree_method hist
+Logloss on test data: 0.0177690433336166; params: eta 0.05,max_delta_step 2,colsample_bynode 1,max_depth 6,num_parallel_tree 1,objective binary:logistic,subsample 0.7,tree_method hist
+Logloss on test data: 0.0177912125352325; params: eta 0.05,max_delta_step 0,colsample_bynode 0.7,max_depth 6,num_parallel_tree 1,objective binary:logistic,subsample 0.7,tree_method hist
+Logloss on test data: 0.0176775423693268; params: eta 0.05,max_delta_step 2,colsample_bynode 0.7,max_depth 6,num_parallel_tree 1,objective binary:logistic,subsample 0.7,tree_method hist
