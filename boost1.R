@@ -129,7 +129,10 @@ test_features_all<-(cbind(test_features_onehot, test_feat_g, test_feat_c) %>% as
 
 train_models <- function(nrounds, params) {
 
-    these_pars_name <- glue('loglosses_xgboostgridsearch_{paste0(names(params), params, "nrounds", nrounds, collapse="_")}')
+    #these_pars_name <- glue('loglosses_xgboostgridsearch_{paste0(names(params), params, "nrounds", nrounds, collapse="_")}')
+    #these_pars_name <- glue('xgbgs_nrounds{nrounds}_{paste0(names(params), params, collapse="_")}')
+    these_pars_name <- glue('xgbgs_nrounds_with_scale_pos_weight_{nrounds}_{paste0(names(params), params, collapse="_")}')
+
     these_pars_rds <- glue('{these_pars_name}.rds')
     these_pars_csv <- glue('{these_pars_name}.csv')
 
@@ -144,6 +147,10 @@ train_models <- function(nrounds, params) {
       train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
       datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
       #p = list(colsample_bynode=0.8, learning_rate=1, max_depth=5, num_parallel_tree=100, objective='binary:logistic', subsample=0.8, tree_method='gpu_hist')
+      ### pos_scaling was bad!
+      ## tux5: tune scale_pos_wegiht on a per model basis
+      #params$scale_pos_weight = sum(train_y_predictor==1)/length(train_y_predictor)
+      #params
       xgboost(data = datamatrix, nrounds=nrounds, params = params, nthread=2)
     }
     end_time<-Sys.time()
@@ -181,24 +188,36 @@ train_models <- function(nrounds, params) {
     write_csv(new_preds, these_pars_csv)
     saveRDS(loglosses, these_pars_rds)
 
-    return_value=glue("Logloss on test data: {mean(unlist(loglosses))}; params: {paste(names(params), params, collapse=',')}\n")
+    return_value=glue("Logloss on test data: {mean(unlist(loglosses))}; nrounds:{nrounds} params: {paste(names(params), params, collapse=',')}\n")
     print(return_value)
     write(return_value, file="XGB_LOGLOSS_METADATA.txt", append=TRUE)
     return_value
 }
 
 nodename <- Sys.info()['nodename']
+if(nodename=="tux5") {
+  eta = c(0.05, 0.1, 0.15, 0.2)
+  # NOTE: Also setting pos_weight_scaling
+  # nrounds = 2000 # lead to ll of about 0.19...; Not good enough
+  nrounds = 300
+  num_parallel_tree = 10
+}
 if(nodename=="tux6") {
   eta = 0.05
   nrounds = 200
+  num_parallel_tree = 10
 }
 if(nodename=="tux7") {
   eta = 0.1
-  nrounds = 150
+  nrounds = 20
+  num_parallel_tree = 100
 }
 if(nodename=="tux8") {
+  # NOTE: HAD to change naming convention for this one.
+  # NOTE: Also set grow_policy=lossguide for this one.
   eta = 0.2
-  nrounds = 100
+  nrounds = 10
+  num_parallel_tree = 1000
 }
 
 # Maximum delta step we allow each leaf output to be. If the value is set to 0, it means there is no constraint. If it is set to a positive value, it can help making the update step more conservative. Usually this parameter is not needed, but it might help in logistic regression when class is extremely imbalanced. Set it to value of 1-10 might help control the update.
@@ -206,20 +225,46 @@ if(nodename=="tux8") {
 param_grid <- expand.grid(
    list(
      eta=eta,
-     max_delta_step=c(0, 2, 10),
-     colsample_bynode=c(1.0, 0.7, 0.3),
-     max_depth=c(1,2), # depth 1 == stumps; Gives an additive model with no interactions modeled
+     max_delta_step=c(5),
+     #colsample_bynode=c(0.7, 0.3),
+     colsample_bynode=0.3, # 0.3 seems to do better
+     max_depth=c(2,3),
+     # max_depth=c(1,2), # depth 1 == stumps; Gives an additive model with no interactions modeled; STUMPS WEREN't good
      #max_depth=c(3,6), # default is 6; 6 was bad
-     num_parallel_tree=c(1, 1000),
+     num_parallel_tree=num_parallel_tree,
      objective='binary:logistic',
      #subsample=c(1.0, 0.7),
-     subsample=0.7, # almost like cross val
+     #subsample=0.7, # almost like cross val
+     subsample=0.5, # almost like cross val
      #sampling_method='gradient_based', # Might be good for imbalanced dataset?? ONLY SUPPORTED for 'gpu_hist'; Set subsample as low as 0.1 here; (subsample >= 0.5 for uniform sampling)
+     # scale_pos_weight on tux5 only
+     #scale_pos_weight=0.3,
+     # lossguide on tux8 only.
+     grow_policy='lossguide', # lossguide: split at nodes with highest loss change; As opposed to: depthwise: split at nodes closest to the root.
      tree_method='hist' # faster!
      #tree_method='exact'
    ),
    stringsAsFactors=FALSE
 )
+
+if(nodename=="tux7") {
+  # Short circuit and do logistic regression.
+  # nrounds = 20 lead to 0.19... almost there
+  # nrounds = 200 lead to 0.28.... Not good
+  # nrounds = 200 lead to 0.18 with lambda = 1; NOT BAD!
+  nrounds = 100
+  param_grid <- expand.grid(
+     list(
+       lambda=c(0.5, 1),
+       alpha=0,
+       colsample_bynode=c(0.3, 0.7),
+       booster='gblinear',   
+       objective='binary:logistic',
+       subsample=c(0.4, 0.7) # almost like cross val
+     ),
+     stringsAsFactors=FALSE
+  )
+}
 
 results <- purrr::pmap_dfr(param_grid, function(...) {
     train_models(nrounds, list(...))
