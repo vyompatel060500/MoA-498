@@ -88,6 +88,8 @@ sample_submission<-read_csv(glue("{path_why}lish-moa/sample_submission.csv"))
 drop_ctl <- FALSE
 with_pca <- TRUE
 with_important_only <- FALSE
+c_pca_thresh <- 0.80
+polynomial_reg <- FALSE
 
 #preprocess_dataset <- function(X){
 #  all_x <- X %>% dplyr::mutate(cp_type = factor(cp_type), cp_dose = factor(cp_dose), cp_time = factor(cp_time))
@@ -155,7 +157,7 @@ test_feat_c<-test_features%>%dplyr::select(starts_with('c-') )
 if(with_pca) {
   print(glue("Starting PCA..."))
   pca_g = preProcess(all_x_g, method = 'pca', thresh = 0.80)
-  pca_c = preProcess(all_x_c, method = 'pca', thresh = 0.90) # thresh 0f 0.80 lead to only 2 PCs
+  pca_c = preProcess(all_x_c, method = 'pca', thresh = c_pca_thresh) # thresh 0f 0.80 lead to only 2 PCs
   all_x_g<-predict(pca_g, all_x_g)
   all_x_c<-predict(pca_c, all_x_c)
   train_x_g<-predict(pca_g, train_x_g)
@@ -214,17 +216,23 @@ train_models <- function(nrounds, ...) {
       } else {
 	train_y_predictor <- train_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
       }
-      datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all %>% dplyr::select(-sig_id)), label = train_y_predictor)
+
+      if(polynomial_reg) {
+	
+      } else {
+	# Original model with xgb
+	datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all %>% dplyr::select(-sig_id)), label = train_y_predictor)
+	if(nodename=='trux') {
+	  xgboost(data = datamatrix, nrounds=nrounds, params = params, nthread=50)
+	} else {
+	  xgboost(data = datamatrix, nrounds=nrounds, params = params, nthread=2)
+	}
+      }
       #p = list(colsample_bynode=0.8, learning_rate=1, max_depth=5, num_parallel_tree=100, objective='binary:logistic', subsample=0.8, tree_method='gpu_hist')
       ### pos_scaling was bad!
       ## tux5: tune scale_pos_wegiht on a per model basis
       #params$scale_pos_weight = sum(train_y_predictor==1)/length(train_y_predictor)
       #params
-      if(nodename=='trux') {
-	xgboost(data = datamatrix, nrounds=nrounds, params = params, nthread=50)
-      } else {
-	xgboost(data = datamatrix, nrounds=nrounds, params = params, nthread=2)
-      }
     }
     end_time<-Sys.time()
     diff=difftime(end_time,start_time,units="secs")
@@ -264,8 +272,13 @@ train_models <- function(nrounds, ...) {
     #   new_preds[i] = preds[[i]]
     # }
 
-    new_preds<-matrix(nrow = dim(test_x)[1], ncol = num_cols_to_use)
-    dimnames(new_preds) = list(test_x_sig_id %>% unlist(), predictors)
+    if(drop_ctl) {
+      new_preds<-matrix(nrow = dim(test_x[test_not_ctl, ])[1], ncol = num_cols_to_use)
+      dimnames(new_preds) = list(test_x_sig_id[test_not_ctl, ] %>% unlist(), predictors)
+    } else {
+      new_preds<-matrix(nrow = dim(test_x)[1], ncol = num_cols_to_use)
+      dimnames(new_preds) = list(test_x_sig_id %>% unlist(), predictors)
+    }
     new_preds<-data.frame(new_preds)
     for(i in 1:num_cols_to_use) {
       new_preds[i] = preds[[i]]
@@ -277,26 +290,26 @@ train_models <- function(nrounds, ...) {
     return_value=glue("Logloss on test data: {mean(unlist(loglosses))}; nrounds:{nrounds} params: {paste(names(params), params, collapse=',')}\n")
     print(return_value)
     #write(return_value, file="XGB_LOGLOSS_METADATA.txt", append=TRUE)
-    robj_id <- insert_result(res=loglosses, testlogloss=ll_test, trainlogloss=ll_train, ..., nrounds=nrounds, with_pca=with_pca, with_important_only=with_important_only, drop_ctl=drop_ctl)
+    robj_id <- insert_result(res=loglosses, testlogloss=ll_test, trainlogloss=ll_train, ..., nrounds=nrounds, with_pca=with_pca, with_important_only=with_important_only, drop_ctl=drop_ctl, c_pca_thresh=c_pca_thresh)
     write_csv(new_preds, file.path(".GRID_SEARCH_RESULTS.db", glue("{robj_id}.csv")))
     saveRDS(loglosses, file.path(".GRID_SEARCH_RESULTS.db", glue("{robj_id}.rds")))
     return_value
 }
 
 if(nodename=="tux5") {
-  eta = c(0.05, 0.1, 0.15, 0.2)
+  eta = 0.05
   # NOTE: Also setting pos_weight_scaling
   # nrounds = 2000 # lead to ll of about 0.19...; Not good enough
-  nrounds = 300
+  nrounds = 200
   num_parallel_tree = 10
 } else if(nodename=="tux6") {
-  eta = c(0.01, 0.03, 0.05)
-  nrounds = 200
-  num_parallel_tree = 10
+  eta = c(0.01)
+  nrounds = 3000
+  num_parallel_tree = 1
 } else if(nodename=="tux7") {
   eta = 0.05
-  nrounds = 200
-  num_parallel_tree = 100
+  nrounds = 500
+  num_parallel_tree = 10
 } else if(nodename=="tux8") {
   # NOTE: HAD to change naming convention for this one.
   # NOTE: Also set grow_policy=lossguide for this one.
@@ -305,9 +318,9 @@ if(nodename=="tux5") {
   nrounds = 200
   num_parallel_tree = 10
 } else if(nodename=='trux') {
-  eta = 0.05
-  nrounds = 200
-  num_parallel_tree = 10
+  eta = c(0.1, 0.05, 0.2)
+  nrounds = 2
+  num_parallel_tree = 2000
 } else {
   # testing on local
   eta = 0.05
@@ -321,12 +334,13 @@ if(nodename=="tux5") {
 param_grid <- expand.grid(
    list(
      eta=eta,
-     max_delta_step=c(0,5),
+     max_delta_step=3,
      #colsample_bynode=c(0.7, 0.3),
      colsample_bynode=0.5, # 0.3 seems to do better
-     colsample_bylevel=0.5,
+     colsample_bylevel=0.7,
      colsample_bytree=if(num_parallel_tree > 1) { c(0.5) } else { c(1.0) },
-     max_depth=c(1,2,3),
+     grow_policy=c('lossguide', 'depthwise'),
+     max_depth=c(2,3,1),
      # max_depth=c(1,2), # depth 1 == stumps; Gives an additive model with no interactions modeled; STUMPS WEREN't good
      #max_depth=c(3,6), # default is 6; 6 was bad
      num_parallel_tree=num_parallel_tree,
@@ -338,7 +352,6 @@ param_grid <- expand.grid(
      # scale_pos_weight on tux5 only
      #scale_pos_weight=0.3,
      # lossguide on tux8 only.
-     grow_policy=c('depthwise', 'lossguide'),
      #grow_policy='lossguide', # lossguide: split at nodes with highest loss change; As opposed to: depthwise: split at nodes closest to the root.
      booster='gbtree',
      tree_method='hist' # faster!
@@ -347,24 +360,24 @@ param_grid <- expand.grid(
    stringsAsFactors=FALSE
 )
 
-#if(nodename=="tux7") {
-#  # Short circuit and do logistic regression.
-#  # nrounds = 20 lead to 0.19... almost there
-#  # nrounds = 200 lead to 0.28.... Not good
-#  # nrounds = 200 lead to 0.18 with lambda = 1; NOT BAD!
-#  nrounds = 100
-#  param_grid <- expand.grid(
-#     list(
-#       lambda=c(0.5, 1),
-#       alpha=0,
-#       colsample_bynode=c(0.3, 0.7),
-#       booster='gblinear',   
-#       objective='binary:logistic',
-#       subsample=c(0.4, 0.7) # almost like cross val
-#     ),
-#     stringsAsFactors=FALSE
-#  )
-#}
+if(nodename=="tux5") {
+  # Short circuit and do logistic regression.
+  # nrounds = 20 lead to 0.19... almost there
+  # nrounds = 200 lead to 0.28.... Not good
+  # nrounds = 200 lead to 0.18 with lambda = 1; NOT BAD!
+  nrounds = 100
+  param_grid <- expand.grid(
+     list(
+       lambda=c(0.5, 1),
+       alpha=c(0),
+       colsample_bynode=c(0.3, 0.5),
+       booster='gblinear',   
+       objective='binary:logistic',
+       subsample=c(0.4, 0.6) # almost like cross val
+     ),
+     stringsAsFactors=FALSE
+  )
+}
 
 results <- purrr::pmap(param_grid, function(...) {
     train_models(nrounds, ...)
