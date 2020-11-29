@@ -43,9 +43,6 @@ best_lls <- pmap(all_lls, function(nn_lls, xgb_lls, linear_lls) {
 
 
 
-
-
-
 # plat the logloss and the proportion of 1's; order by proportion of 1's
 ones <- colSums(Ynums)
 number_o_ones <- tibble(Index=colnames(Ynums), ones=ones, loglosses=loglosses, xgb_lls=xgb_lls, linear_lls=linear_xgb_loglossess)
@@ -55,10 +52,10 @@ write.csv(number_o_ones, "./REPORT_DATA_FILES/number_o_ones.csv")
 scaling_ratio <- max(ones)/(max(loglosses, deep_xgb_loglosses, linear_xgb_loglossess))
 
 g <- ggplot(number_o_ones) + 
-  geom_bar(aes(x = reorder(Index, -ones), y = ones), stat = "identity", fill = "red") + 
-  geom_point(aes(x=reorder(Index, -ones), y = loglosses * scaling_ratio)) +
-  geom_point(aes(x=reorder(Index, -ones), y = xgb_lls * scaling_ratio), col='green') +
-  geom_point(aes(x=reorder(Index, -ones), y = linear_lls * scaling_ratio), col='orange') +
+  geom_bar(aes(x = reorder(Index, -loglosses), y = ones), stat = "identity", fill = "red") + 
+  geom_point(aes(x=reorder(Index, -loglosses), y = loglosses * scaling_ratio)) +
+  geom_point(aes(x=reorder(Index, -loglosses), y = xgb_lls * scaling_ratio), col='green') +
+  geom_point(aes(x=reorder(Index, -loglosses), y = linear_lls * scaling_ratio), col='orange') +
   theme_minimal() + guides(fill = "none") + 
   xlab("MoA Annotation") + ylab("Number of MoA Instances") + 
   theme(axis.text.x=element_blank(), plot.title = element_text(hjust = 0.5)) +

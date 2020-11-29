@@ -25,6 +25,11 @@ top_drugs = drug_freqs[drug_freqs > 12]
 
 import asyncio
 
+
+
+
+
+
 labs_temp = pd.DataFrame(data=dict(top_drugs=top_drugs, labs=range(1,len(top_drugs)+1)))
 labs_map = {k:k for k,v in zip(labs_temp.top_drugs.keys(), labs_temp.top_drugs.keys())}
 labs = np.array([labs_map.get(k, 'default') for k in drugs.drug_id])
