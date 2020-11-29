@@ -126,7 +126,7 @@ test_x_all<-(cbind(test_x_onehot, test_x_g, test_x_c) %>% as_tibble())[,-c(1,2)]
 test_features_all<-(cbind(test_features_onehot, test_feat_g, test_feat_c) %>% as_tibble())[,-c(1,2)]
 
 
-cl<-makeCluster(4)
+cl<-makeCluster(10)
 registerDoParallel(cl)
 start_time<-Sys.time()
 print(glue("Started training models..."))
@@ -134,7 +134,9 @@ print(glue("Started training models..."))
 models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
   train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
   datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
-  xgboost(data = datamatrix, learning_rate=0.25, max_depth=3, nrounds = 40, objective = 'binary:logistic', tree_method = 'gpu_hist')
+  xgboost(data = datamatrix, eta = 0.01, max_depth=1, colsample_bynode=  0.5, colsample_bylevel = 0.5, 
+          colsample_bytree = 1, subsample = 0.7, grow_policy = "depthwise", booster = "gbtree", nrounds = 3000, num_parallel_tree = 1,
+          objective = 'binary:logistic', tree_method = 'gpu_hist')
 }
 end_time<-Sys.time()
 diff=difftime(end_time,start_time,units="secs")
@@ -142,43 +144,51 @@ print(glue("Training Complete!"))
 print(glue("Time taken for training models: {diff} seconds."))
 stopCluster(cl)
 
-print(glue("Starting predictions..."))
-preds<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
-  pred<-predict(models[[i]],newdata = as.matrix(test_x_all))
+
+print(glue("Starting predictions on test data..."))
+test_preds<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
+  pred<-predict(models[[i]],newdata = as.matrix(test_x_all %>% dplyr::select(-sig_id)))
 }
 print(glue("Prediction complete!\n"))
 
+for(i in 1:length(test_preds)){
+  test_preds[[i]][!test_not_ctl] = 0
+}
 
-for(i in 1:length(preds)){
-  preds[[i]][!test_not_ctl] = 0
+print(glue("Starting predictions on train data..."))
+train_preds<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
+  pred<-predict(models[[i]],newdata = as.matrix(train_x_all %>% dplyr::select(-sig_id)))
+}
+print(glue("Prediction complete!\n"))
+
+for(i in 1:length(train_preds)){
+  train_preds[[i]][!train_not_ctl] = 0
 }
 
 print(glue("Starting logloss calculation..."))
-loglosses<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %do% {
+loglosses<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
   test_y_predictor<-test_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
-  
   temp <- pmax(pmin(as.numeric(preds[[i]]), 1 - 1e-15), 1e-15)
   logloss(temp,test_y_predictor)
 }
 
-
-#new_preds<-matrix(nrow = dim(test_x)[1], ncol = length(predictors))
-#dimnames(new_preds) = list(test_x_sig_id %>% unlist(), predictors)
-#new_preds<-data.frame(new_preds)
-#for(i in 1:length(predictors)){
-#  new_preds[i] = preds[[i]]
-#}
-
-#write_csv(new_preds,"preds_with_names.csv")
-
-print(glue("Logloss on test data: {mean(loglosses%>%unlist())}\n"))
-
-for(i in 1:length(predictors)){
-  pred = predict(models[[i]] , newdata = as.matrix(test_features_all))
-  pred[!test_features_not_ctl] = 0
-  sample_submission[[predictors[i]]] = pred
+train_loglosses<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
+  train_y_predictor<-train_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
+  temp <- pmax(pmin(as.numeric(preds[[i]]), 1 - 1e-15), 1e-15)
+  logloss(temp,train_y_predictor)
 }
 
-write_csv(sample_submission, 'submission.csv')
 
+print(glue("Logloss on test data: {mean(loglosses%>%unlist())}\n"))
+print(glue("Logloss on train data: {mean(train_loglosses%>%unlist())}\n"))
+
+# 
+# for(i in 1:length(predictors)){
+#   pred = predict(models[[i]] , newdata = as.matrix(test_features_all))
+#   pred[!test_features_not_ctl] = 0
+#   sample_submission[[predictors[i]]] = pred
+# }
+# 
+# write_csv(sample_submission, 'submission.csv')
+# 
 print("End...")
