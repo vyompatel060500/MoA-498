@@ -1,0 +1,85 @@
+-st(--
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+library(tidyverse)
+drugs <- readr::read_csv('./lish-moa/train_drug.csv')
+Y <- readr::read_csv('./lish-moa/train_targets_scored.csv')
+nn <- readr::read_csv('./REPORT_DATA_FILES/NN_predictions.csv')
+```
+```{r}
+source('./all_the_functions.R')
+```
+
+
+```{r}
+library(ggplot2)
+
+Ynums <- Y %>% dplyr::select(-sig_id)
+res <- map2(nn, Ynums, function(nvec, realvec) {
+  logloss(nvec, realvec)
+})
+
+loglosses <- unlist(res)
+
+read_lls <- function(n) {
+  xgb_loglosses <- readRDS(glue::glue("./.GRID_SEARCH_RESULTS.db/{n}.rds"))
+  names(xgb_loglosses) <- names(Ynums)
+  unlist(xgb_loglosses)
+}
+
+deep_xgb_loglosses <- read_lls(27)
+linear_xgb_loglossess <- read_lls(19)
+
+
+all_lls <- tibble(nn_lls=loglosses, xgb_lls=xgb_lls, linear_lls=linear_xgb_loglossess)
+
+best_lls <- pmap(all_lls, function(nn_lls, xgb_lls, linear_lls) {
+  min(nn_lls, xgb_lls, linear_lls)
+})
+
+
+
+
+
+
+# plat the logloss and the proportion of 1's; order by proportion of 1's
+ones <- colSums(Ynums)
+number_o_ones <- tibble(Index=colnames(Ynums), ones=ones, loglosses=loglosses, xgb_lls=xgb_lls, linear_lls=linear_xgb_loglossess)
+
+write.csv(number_o_ones, "./REPORT_DATA_FILES/number_o_ones.csv")
+
+scaling_ratio <- max(ones)/(max(loglosses, deep_xgb_loglosses, linear_xgb_loglossess))
+
+g <- ggplot(number_o_ones) + 
+  geom_bar(aes(x = reorder(Index, -ones), y = ones), stat = "identity", fill = "red") + 
+  geom_point(aes(x=reorder(Index, -ones), y = loglosses * scaling_ratio)) +
+  geom_point(aes(x=reorder(Index, -ones), y = xgb_lls * scaling_ratio), col='green') +
+  geom_point(aes(x=reorder(Index, -ones), y = linear_lls * scaling_ratio), col='orange') +
+  theme_minimal() + guides(fill = "none") + 
+  xlab("MoA Annotation") + ylab("Number of MoA Instances") + 
+  theme(axis.text.x=element_blank(), plot.title = element_text(hjust = 0.5)) +
+  ggtitle("Number of MoA Instances Across All 206 Annotations")
+g
+
+png('freq_of_ones_with_log_losses.png')
+g
+dev.off()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
