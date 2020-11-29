@@ -240,28 +240,38 @@ train_models <- function(nrounds, ...) {
     print(glue("Time taken for training models: {diff} seconds."))
     stopCluster(cl)
 
-    print(glue("Starting predictions..."))
-    preds<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
+    print(glue("Starting predictions on test data..."))
+    test_preds<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
       pred<-predict(models[[i]],newdata = as.matrix(test_x_all %>% dplyr::select(-sig_id)))
     }
     print(glue("Prediction complete!\n"))
 
 
-    for(i in 1:length(preds)){
-      preds[[i]][!test_not_ctl] = 0
+    for(i in 1:length(test_preds)){
+      test_preds[[i]][!test_not_ctl] = 0
     }
+
+        print(glue("Starting predictions on train data..."))
+    train_preds<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
+      pred<-predict(models[[i]],newdata = as.matrix(train_x_all %>% dplyr::select(-sig_id)))
+    }
+    print(glue("Prediction complete!\n"))
+
+
+    for(i in 1:length(train_preds)){
+      train_preds[[i]][!train_not_ctl] = 0
+    }
+
 
     print(glue("Starting logloss calculation..."))
     loglosses<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
       test_y_predictor<-test_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
-      
       temp <- pmax(pmin(as.numeric(preds[[i]]), 1 - 1e-15), 1e-15)
       logloss(temp,test_y_predictor)
     }
 
     train_loglosses<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
       train_y_predictor<-train_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
-      
       temp <- pmax(pmin(as.numeric(preds[[i]]), 1 - 1e-15), 1e-15)
       logloss(temp,train_y_predictor)
     }
