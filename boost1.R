@@ -241,28 +241,34 @@ train_models <- function(nrounds, ...) {
     stopCluster(cl)
 
     print(glue("Starting predictions..."))
-    preds<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
+    test_preds<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
       pred<-predict(models[[i]],newdata = as.matrix(test_x_all %>% dplyr::select(-sig_id)))
+    }
+    train_preds<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
+      pred<-predict(models[[i]],newdata = as.matrix(train_x_all %>% dplyr::select(-sig_id)))
     }
     print(glue("Prediction complete!\n"))
 
 
-    for(i in 1:length(preds)){
-      preds[[i]][!test_not_ctl] = 0
+    for(i in 1:length(test_preds)){
+      test_preds[[i]][!test_not_ctl] = 0
+    }
+    for(i in 1:length(train_preds)){
+      train_preds[[i]][!train_not_ctl] = 0
     }
 
     print(glue("Starting logloss calculation..."))
     loglosses<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
       test_y_predictor<-test_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
       
-      temp <- pmax(pmin(as.numeric(preds[[i]]), 1 - 1e-15), 1e-15)
+      temp <- pmax(pmin(as.numeric(test_preds[[i]]), 1 - 1e-15), 1e-15)
       logloss(temp,test_y_predictor)
     }
 
     train_loglosses<-foreach(i=1:num_cols_to_use  ,.packages=c("glue","dplyr","xgboost")) %do% {
       train_y_predictor<-train_y %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
       
-      temp <- pmax(pmin(as.numeric(preds[[i]]), 1 - 1e-15), 1e-15)
+      temp <- pmax(pmin(as.numeric(train_preds[[i]]), 1 - 1e-15), 1e-15)
       logloss(temp,train_y_predictor)
     }
     # new_preds<-matrix(nrow = dim(test_x)[1], ncol = length(predictors))
@@ -281,7 +287,7 @@ train_models <- function(nrounds, ...) {
     }
     new_preds<-data.frame(new_preds)
     for(i in 1:num_cols_to_use) {
-      new_preds[i] = preds[[i]]
+      new_preds[i] = test_preds[[i]]
     }
 
 
@@ -293,23 +299,24 @@ train_models <- function(nrounds, ...) {
     robj_id <- insert_result(res=loglosses, testlogloss=ll_test, trainlogloss=ll_train, ..., nrounds=nrounds, with_pca=with_pca, with_important_only=with_important_only, drop_ctl=drop_ctl, c_pca_thresh=c_pca_thresh)
     write_csv(new_preds, file.path(".GRID_SEARCH_RESULTS.db", glue("{robj_id}.csv")))
     saveRDS(loglosses, file.path(".GRID_SEARCH_RESULTS.db", glue("{robj_id}.rds")))
+    saveRDS(models, file.path(".GRID_SEARCH_RESULTS.db", glue("MODEL{robj_id}.rds")))
     return_value
 }
 
 if(nodename=="tux5") {
-  eta = 0.05
+  eta = c(0.03,0.05,0.07)
   # NOTE: Also setting pos_weight_scaling
   # nrounds = 2000 # lead to ll of about 0.19...; Not good enough
-  nrounds = 200
+  nrounds = 300
   num_parallel_tree = 10
 } else if(nodename=="tux6") {
-  eta = c(0.01)
-  nrounds = 3000
-  num_parallel_tree = 1
-} else if(nodename=="tux7") {
-  eta = 0.05
-  nrounds = 500
+  eta = c(0.01, 0.02,0.03,0.04,0.05)
+  nrounds = 200
   num_parallel_tree = 10
+} else if(nodename=="tux7") {
+  eta = 0.1
+  nrounds = 50
+  num_parallel_tree = 40
 } else if(nodename=="tux8") {
   # NOTE: HAD to change naming convention for this one.
   # NOTE: Also set grow_policy=lossguide for this one.
@@ -318,9 +325,9 @@ if(nodename=="tux5") {
   nrounds = 200
   num_parallel_tree = 10
 } else if(nodename=='trux') {
-  eta = c(0.1, 0.05, 0.2)
-  nrounds = 2
-  num_parallel_tree = 2000
+  eta = c(0.05, 0.1)
+  nrounds = 200
+  num_parallel_tree = 10
 } else {
   # testing on local
   eta = 0.05
@@ -334,19 +341,18 @@ if(nodename=="tux5") {
 param_grid <- expand.grid(
    list(
      eta=eta,
-     max_delta_step=3,
+     max_delta_step=5,
      #colsample_bynode=c(0.7, 0.3),
      colsample_bynode=0.5, # 0.3 seems to do better
      colsample_bylevel=0.7,
      colsample_bytree=if(num_parallel_tree > 1) { c(0.5) } else { c(1.0) },
-     grow_policy=c('lossguide', 'depthwise'),
-     max_depth=c(2,3,1),
+     grow_policy=c('lossguide'),
+     max_depth=c(1,2,3),
      # max_depth=c(1,2), # depth 1 == stumps; Gives an additive model with no interactions modeled; STUMPS WEREN't good
      #max_depth=c(3,6), # default is 6; 6 was bad
      num_parallel_tree=num_parallel_tree,
      objective='binary:logistic',
      #subsample=c(1.0, 0.7),
-     #subsample=0.7, # almost like cross val
      subsample=0.7, # almost like cross val
      #sampling_method='gradient_based', # Might be good for imbalanced dataset?? ONLY SUPPORTED for 'gpu_hist'; Set subsample as low as 0.1 here; (subsample >= 0.5 for uniform sampling)
      # scale_pos_weight on tux5 only
@@ -360,24 +366,24 @@ param_grid <- expand.grid(
    stringsAsFactors=FALSE
 )
 
-if(nodename=="tux5") {
-  # Short circuit and do logistic regression.
-  # nrounds = 20 lead to 0.19... almost there
-  # nrounds = 200 lead to 0.28.... Not good
-  # nrounds = 200 lead to 0.18 with lambda = 1; NOT BAD!
-  nrounds = 100
-  param_grid <- expand.grid(
-     list(
-       lambda=c(0.5, 1),
-       alpha=c(0),
-       colsample_bynode=c(0.3, 0.5),
-       booster='gblinear',   
-       objective='binary:logistic',
-       subsample=c(0.4, 0.6) # almost like cross val
-     ),
-     stringsAsFactors=FALSE
-  )
-}
+#if(nodename=="tux5") {
+#  # Short circuit and do logistic regression.
+#  # nrounds = 20 lead to 0.19... almost there
+#  # nrounds = 200 lead to 0.28.... Not good
+#  # nrounds = 200 lead to 0.18 with lambda = 1; NOT BAD!
+#  nrounds = 100
+#  param_grid <- expand.grid(
+#     list(
+#       lambda=c(0.5, 1),
+#       alpha=c(0),
+#       colsample_bynode=c(0.3, 0.5),
+#       booster='gblinear',   
+#       objective='binary:logistic',
+#       subsample=c(0.4, 0.6) # almost like cross val
+#     ),
+#     stringsAsFactors=FALSE
+#  )
+#}
 
 results <- purrr::pmap(param_grid, function(...) {
     train_models(nrounds, ...)
