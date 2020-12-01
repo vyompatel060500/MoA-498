@@ -1,3 +1,7 @@
+# Code snipper used to generate PCA variance plots.
+# train_x_c and train_x_g are data.frames containing
+# originial cell and gene features
+
 library(factoextra)
 pca_c<-prcomp(train_x_c, scale. = TRUE, center = TRUE)
 pca_g<-prcomp(train_x_g, scale. = TRUE, center = TRUE)
