@@ -13,3 +13,5 @@ models_logistic.rds
 
 #.GRID_SEARCH_RESULTS.db/
 #GRID_SEARCH_RESULTS.db
+
+.DS_Store
