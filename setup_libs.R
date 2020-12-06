@@ -19,7 +19,11 @@ list.of.packages <- c(
 "caret",
 "e1071",
 "xgboost",
-"onehot"
+"onehot",
+"DBI",
+"RSQLite",
+"keras",
+"tensorflow"
 )
 
 # create local user library path (not present by default)
