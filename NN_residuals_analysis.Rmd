@@ -51,21 +51,38 @@ write.csv(number_o_ones, "./REPORT_DATA_FILES/number_o_ones.csv")
 
 scaling_ratio <- max(ones)/(max(loglosses, deep_xgb_loglosses, linear_xgb_loglossess))
 
+alpha = 0.3
+size = 1.7
+
 g <- ggplot(number_o_ones) + 
-  geom_bar(aes(x = reorder(Index, -loglosses), y = ones), stat = "identity", fill = "red") + 
-  geom_point(aes(x=reorder(Index, -loglosses), y = loglosses * scaling_ratio)) +
-  geom_point(aes(x=reorder(Index, -loglosses), y = xgb_lls * scaling_ratio), col='green') +
-  geom_point(aes(x=reorder(Index, -loglosses), y = linear_lls * scaling_ratio), col='orange') +
+  geom_bar(aes(x = reorder(Index, -ones), y = ones), stat = "identity", fill = "red") + 
+  geom_bar(aes(x = reorder(Index, -ones), y = loglosses * scaling_ratio), stat = 'identity', fill = 'blue', alpha = alpha) +
+  geom_point(aes(x = reorder(Index, -ones), y = loglosses * scaling_ratio), col = 'blue', size = size) +
+  geom_bar(aes(x = reorder(Index, -ones), y = xgb_lls * scaling_ratio), stat = 'identity', fill = 'green', alpha = alpha) +
+  geom_point(aes(x = reorder(Index, -ones), y = xgb_lls * scaling_ratio), col = 'green', size = size) +
+  geom_bar(aes(x = reorder(Index, -ones), y = linear_lls * scaling_ratio), stat = 'identity', fill='orange', alpha = alpha) +
+  geom_point(aes(x = reorder(Index, -ones), y = linear_lls * scaling_ratio), col = 'orange', size = size) +
   theme_minimal() + guides(fill = "none") + 
   xlab("MoA Annotation") + ylab("Number of MoA Instances") + 
   theme(axis.text.x=element_blank(), plot.title = element_text(hjust = 0.5)) +
-  ggtitle("Number of MoA Instances Across All 206 Annotations")
-g
+  ggtitle("Marginal log-loss for each MoA for each Model Trained")
 
-png('freq_of_ones_with_log_losses.png')
-g
-dev.off()
 
+#png('marginal-log-loss.png')
+#g
+#dev.off()
+
+library(reshape2)
+
+names(number_o_ones) <- c("Index", "ones", "NN log-loss", "XGB Trees log-loss", "XGB Linear Model log-loss")
+
+dd <- melt(number_o_ones, id="Index")
+
+#ggplot(dd) +
+#  geom_line(aes(x=Index, y=value, colour=variable)) +
+#  scale_colour_manual(values=c("red","green","blue"))
+
+g
 ```
 
 
