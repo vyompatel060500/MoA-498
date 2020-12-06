@@ -1,0 +1,243 @@
+---
+title: "MoA Math 498 Neural Network"
+author: "Alan Cook, Vyom Patel, Aaron Toderash, Braedan Walker"
+date: "09/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE, eval=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r include=FALSE}
+library(tensorflow)
+library(caret)
+library(tidyverse)
+library(recipes)
+library(modelr)
+library(keras)
+```
+
+```{r}
+PATH <- "./lish-moa/"
+SEEDS <- c(17,451,2522,781,9289)
+KFOLDS <- 5
+P_MIN <- 0.001
+P_MAX <- 0.999
+```
+
+
+```{r}
+train_features = read_csv(str_c(PATH,"train_features.csv"))
+test_features = read_csv(str_c(PATH,"test_features.csv"))
+```
+
+```{r}
+keep_rows <- train_features$cp_type != "ctl_vehicle"
+train_features <- train_features[keep_rows,]
+```
+
+
+```{r}
+train_features$cp_time = train_features$cp_time %/% 24
+train_features$cp_dose = as.integer(train_features$cp_dose == "D2")
+
+test_features$cp_time = test_features$cp_time %/% 24
+test_features$cp_dose = as.integer(test_features$cp_dose == "D2")
+
+
+Y0 <- read_csv(str_c(PATH, "train_targets_nonscored.csv")) %>%
+  select(-sig_id) %>%
+  filter(keep_rows) %>%
+  data.matrix()
+
+Y <- read_csv(str_c(PATH, "train_targets_scored.csv")) %>%
+  select(-sig_id) %>%
+  filter(keep_rows) %>%
+  data.matrix()
+  
+sub <- read_csv(str_c(PATH, "sample_submission.csv")) %>%
+  mutate(across(where(is.numeric), ~0))
+```
+
+
+#Pre-processing
+```{r}
+(rec <- train_features %>%
+   recipe(~ .) %>%
+   step_rm(sig_id,cp_type) %>%
+   step_mutate(g_mean = apply(across(starts_with("g-")), 1, mean), c_mean = apply(across(starts_with("c-")), 1, mean)) %>%
+   step_mutate_at(starts_with("cp_"), fn = list(as_factor)) %>%
+   step_mutate_at(contains("g-"), fn = list(copy_g = function(x) x)) %>%
+   step_mutate_at(contains("c-"), fn = list(copy_c = function(x) x)) %>%
+   step_dummy(starts_with("cp_")) %>%
+   step_normalize(-starts_with("cp_")) %>%
+   step_pca(contains("copy_g"), num_comp = 25, prefix = "g_pca") %>%
+   step_pca(contains("copy_c"), num_comp = 100, prefix = "c_pca") %>%
+   prep())
+
+                  
+X<- juice(rec, composition = "matrix")
+X_test <- bake(rec, test_features, composition = "matrix")
+```
+
+#Preprocessing template for tuning
+<!---
+```{r}
+(rec2 <- train_features %>%
+   recipe(~ .) %>%
+   step_rm(sig_id,starts_with("cp")) %>%
+   #step_mutate(g_mean = apply(across(starts_with("g-")), 1, mean), c_mean = apply(across(starts_with("c-")), 1, mean)) %>%
+   #step_mutate_at(starts_with("cp_"), fn = list(as_factor)) %>%
+   #step_mutate_at(contains("g-"), fn = list(copy_g = function(x) x)) %>%
+   #step_mutate_at(contains("c-"), fn = list(copy_c = function(x) x)) %>%
+   #step_dummy(starts_with("cp_")) %>%
+   step_normalize(all_numeric()) %>%
+   step_pca(contains("g-"), num_comp = 600, prefix = "g_pca") %>%
+   step_pca(contains("c-"), num_comp = 50, prefix = "c_pca") %>%
+   prep())
+
+```
+--->
+
+#Loss function with Label smoothing applied with P_MIN and P_Max
+```{r}
+logloss <- function(y,y_h) {
+  y_h <- k_clip(y_h, P_MIN, P_MAX)
+  -k_mean(y*k_log(y_h) + (1-y)*k_log(1-y_h))
+}
+```
+
+
+#NN template for tuning
+<!---
+```{r} 
+create_nn2 <- function(ncol_X, ncol_Y){
+  keras_model_sequential() %>%
+    layer_batch_normalization(input_shape = ncol_X) %>%
+    layer_dropout(0.2) %>%
+    #layer_dense(units = 512,"tanh") %>% 
+    layer_dense(512, "relu") %>%
+    layer_batch_normalization() %>%
+    layer_dropout(0.2) %>% 
+    layer_dense(256,"relu") %>%
+    layer_batch_normalization() %>%
+    layer_dense(ncol_Y, "sigmoid") %>%
+    keras::compile(optimizer = "adam",
+                   loss = tf$losses$BinaryCrossentropy(label_smoothing = 0.001),
+                   metrics = logloss)
+}
+```
+--->
+
+
+#Actual NN model used
+```{r}
+create_nn <- function(ncol_X, ncol_Y){
+  keras_model_sequential() %>%
+    layer_batch_normalization(input_shape = ncol_X) %>%
+    layer_dropout(0.2) %>% 
+    layer_dense(512, "relu") %>%
+    layer_batch_normalization() %>%
+    layer_dropout(0.2) %>% 
+    layer_dense(512,"relu") %>%
+    layer_batch_normalization() %>%
+    layer_dense(ncol_Y, "sigmoid") %>%
+    keras::compile(optimizer = "adam",
+                   loss = tf$losses$BinaryCrossentropy(label_smoothing = 0.001),
+                   metrics = logloss)
+}
+```
+
+
+
+```{r}
+callbacks <- function() {
+  list(callback_early_stopping(patience = 5, min_delta = 1e-05),
+       callback_model_checkpoint(file_name, save_best_only = TRUE, verbose = 0, mode = "auto"),
+       callback_reduce_lr_on_plateau(factor = 0.2, patience = 5, verbose = 0, mode = "auto"))
+}
+```
+
+
+
+
+
+
+```{r}
+scores <- c()
+start_time = Sys.time()
+cat("Started at: ", str_c(Sys.time()), "\n")
+
+
+for(s in SEEDS) {
+  set.seed(s)
+  k = 0
+  for(rs in crossv_kfold(train_features, KFOLDS)$train) {
+    tri <- as.integer(rs)
+    k = k + 1
+    file_name = paste0('model weights of seed ',s,' fold ', k, '.h5')
+    
+    
+    #Training on nonscored dataset
+    m_nn0 <- create_nn(ncol(X), ncol(Y0))
+    m_nn0 %>% keras::fit(X[tri, ], Y0[tri, ],
+                         epochs = 100,
+                         batch_size = 128,
+                         validation_data = list(X[-tri, ], Y0[-tri,]),
+                         callbacks = callbacks(), 
+                         view_metrics = FALSE,
+                         verbose = 0)
+    load_model_weights_hdf5(m_nn0, file_name)
+    
+    
+    
+    #Training on scored dataset
+    m_nn <- create_nn(ncol(X), ncol(Y))
+    for(i in 1:(length(m_nn$layers)-1))set_weights(m_nn$layers[[i]],get_weights(m_nn0$layers[[i]]))
+
+    hist <- m_nn %>% keras::fit(X[tri, ], Y[tri, ],
+                                epochs = 100,
+                                batch_size = 128,
+                                validation_data = list(X[-tri,],Y[-tri,]),
+                                callbacks = callbacks(),
+                                view_metrics = FALSE,
+                                verbose = 0)
+    load_model_weights_hdf5(m_nn, file_name)
+    
+    scores <- c(scores, min(hist$metrics$val_loss))
+    train_metric = evaluate(m_nn, X[tri,], Y[tri, ])[['loss']]
+    valid_metric = evaluate(m_nn, X[-tri,], Y[-tri, ])[['loss']]
+    
+    cat("Best val-loss for fold: ", k, " of ", min(hist$metrics$val_loss), "at", which.min(hist$metrics$val_loss), "step\n")
+    
+    #Weighted prediction on test data
+    sub[, -1] <- sub[, -1] + predict(m_nn, X_test) / KFOLDS/length(SEEDS)
+    
+    #rm(tri, m_nn, m_nn0, hist)
+    file.remove(file_name)
+  }
+}
+end_time = Sys.time()
+cat("Ended at: ", str_c(Sys.time()))
+cat("Total time taken ", end_time - start_time)
+```
+
+
+```{r}
+cat("\nMean score:", mean(scores), "\n")
+```
+
+```{r}
+cat(summary(m_nn), "\n mean CV-logloss=", mean(scores))
+```
+
+
+```{r}
+sub[test_features$cp_type=="ctl_vehicle", -1] <-0
+write_csv(sub,"submission.csv")
+```
+
+
+
