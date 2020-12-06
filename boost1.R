@@ -42,8 +42,8 @@ convert_onehot<-function(x){
 }
 
 
-# path_why <- "/home/patel/project498/MoA-498/"
-path_why <- "./"
+path_why <- "/home/patel/project498/MoA-498/"
+# path_why <- "/"
 
 # Read the data
 train_features <- read_csv(glue("{path_why}lish-moa/train_features.csv")) 
@@ -108,7 +108,7 @@ names(test_x_g)<-glue("PCg-{c(1:length(test_x_g))}")
 names(test_feat_g)<-glue("PCg-{c(1:length(test_feat_g))}")
 
 # combine all features of train-test dataset after pre-processing into corresponding variable
-train_x_all<-(cbind(train_x_onehot, train_x_g, train_x_c) %>% as_tibble())[train_not_ctl,-c(1,2)]
+train_x_all<-(cbind(train_x_onehot, train_x_g, train_x_c) %>% as_tibble())[,-c(1,2)]
 test_x_all<-(cbind(test_x_onehot, test_x_g, test_x_c) %>% as_tibble())[,-c(1,2)]
 test_features_all<-(cbind(test_features_onehot, test_feat_g, test_feat_c) %>% as_tibble())[,-c(1,2)]
 
@@ -122,7 +122,7 @@ print(glue("Started training models..."))
 #Start Model Training
 models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) %dopar% {
   train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
-  datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
+  datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all[train_not_ctl,]), label = train_y_predictor)
   xgboost(data = datamatrix, eta = 0.05, max_depth=2, colsample_bynode=  0.5, colsample_bylevel = 0.5, 
           colsample_bytree = 1, subsample = 0.7, nrounds = 200, num_parallel_tree = 10, objective = 'binary:logistic', tree_method = 'hist', nthread=2)
 }
