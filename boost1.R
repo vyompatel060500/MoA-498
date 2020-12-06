@@ -42,7 +42,8 @@ convert_onehot<-function(x){
 }
 
 
-path_why <- "/home/patel/project498/MoA-498/"
+# path_why <- "/home/patel/project498/MoA-498/"
+path_why <- "./"
 
 # Read the data
 train_features <- read_csv(glue("{path_why}lish-moa/train_features.csv")) 
@@ -123,7 +124,7 @@ models<-foreach(i=1:length(predictors)  ,.packages=c("glue","dplyr","xgboost")) 
   train_y_predictor<-train_y[train_not_ctl,] %>% dplyr::select(predictors[i]) %>% unlist(use.names = FALSE)
   datamatrix<-xgb.DMatrix(data = as.matrix(train_x_all), label = train_y_predictor)
   xgboost(data = datamatrix, eta = 0.05, max_depth=2, colsample_bynode=  0.5, colsample_bylevel = 0.5, 
-          colsample_bytree = 1, subsample = 0.7, nrounds = 200, num_parallel_tree = 10, objective = 'binary:logistic', tree_method = 'gpu_hist')
+          colsample_bytree = 1, subsample = 0.7, nrounds = 200, num_parallel_tree = 10, objective = 'binary:logistic', tree_method = 'hist', nthread=2)
 }
 end_time<-Sys.time()
 diff=difftime(end_time,start_time,units="secs")
