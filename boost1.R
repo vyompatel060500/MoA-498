@@ -93,7 +93,7 @@ test_feat_c<-test_features%>%dplyr::select(starts_with('c-'))
 #Perform PCA#
 print(glue("Starting PCA..."))
 pca_g = preProcess(train_x_g, method = 'pca', thresh = 0.80)
-pca_c = preProcess(train_x_c, method = 'pca', thresh = 0.90)
+pca_c = preProcess(train_x_c, method = 'pca', thresh = 0.80)
 train_x_g<-predict(pca_g, train_x_g)
 train_x_c<-predict(pca_c, train_x_c)
 test_x_g<-predict(pca_g, test_x_g)
