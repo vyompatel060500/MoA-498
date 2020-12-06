@@ -42,8 +42,8 @@ convert_onehot<-function(x){
 }
 
 
-path_why <- "/home/patel/project498/MoA-498/"
-# path_why <- "/"
+# path_why <- "/home/patel/project498/MoA-498/"
+path_why <- "./"
 
 # Read the data
 train_features <- read_csv(glue("{path_why}lish-moa/train_features.csv")) 
